@@ -9,8 +9,8 @@ Detailed patch registry: `docs/LOCAL_PATCHES.md`.
 ## 2. Get the official source
 
 ```powershell
-git clone <OFFICIAL_ZCODE_REPOSITORY_URL> zcode-docker
-Set-Location zcode-docker
+git clone <OFFICIAL_ZCODE_REPOSITORY_URL> zcode-web
+Set-Location zcode-web
 git rev-parse HEAD
 git describe --tags --always
 ```
@@ -20,7 +20,7 @@ Record the exact upstream tag/commit before applying local changes.
 ## 3. Create the local deployment branch
 
 ```powershell
-git switch -c local/zcode-docker
+git switch -c local/zcode-web
 git add -A
 git commit -m "chore: baseline upstream ZCode source"
 ```
@@ -91,7 +91,7 @@ git commit -m "fix: preserve local ZCode Docker patches"
 Optionally tag a known-good deployment:
 
 ```powershell
-git tag zcode-docker-known-good-<version>
+git tag zcode-web-known-good-<version>
 ```
 
 ## 10. Future upstream upgrades

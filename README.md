@@ -13,6 +13,53 @@ Key goals:
 - Keep local fixes documented and easy to reapply after upstream updates.
 - Provide mobile access through the existing ZCode web interface.
 
+## Architecture overview
+
+ZCode Web is deployed as a Docker-based backend. The browser/mobile client connects to the WebUI through the Windows host, while ZCode reaches Docker Desktop through an isolated internal API proxy.
+
+```text
+Browser / iPhone / iPad
+        |
+        | Tailscale (remote) or LAN (local)
+        v
+Windows host / Docker Desktop
+        |
+        | published port 3030
+        v
++-------------------------------+
+| zcode-web container            |
+| ZCode WebUI + backend          |
+|                                |
+| /data  <- persistent volume    |
+| /workspace <- local workspace  |
++---------------+---------------+
+                |
+                | DOCKER_HOST=tcp://docker-api-proxy:2375
+                | internal Docker network only
+                v
++-------------------------------+
+| zcode-docker-api-proxy         |
+| restricted Docker API proxy    |
++---------------+---------------+
+                |
+                | /var/run/docker.sock
+                v
+        Docker Desktop Engine
+                |
+                +-- project/test containers
+```
+
+### Request and execution flow
+
+1. **Client access:** A browser or mobile device opens the ZCode WebUI. For remote access, traffic reaches the Windows host through Tailscale; Tailscale itself runs on the host rather than inside the ZCode container.
+2. **WebUI/backend:** The `zcode-web` container publishes port `3030`. The client does not connect directly to the Docker API.
+3. **Persistent state:** `/data` is backed by the `zcode-data` Docker volume, so recreating the application container does not intentionally erase ZCode state, sessions, or configuration stored there.
+4. **Workspace:** `./workspace` is mounted at `/workspace` for the working files used by ZCode.
+5. **Docker control:** When ZCode needs to create, inspect, start, stop, execute in, or otherwise manage Docker resources, its Docker client uses `DOCKER_HOST=tcp://docker-api-proxy:2375`.
+6. **Isolation:** The API proxy is connected to the dedicated internal `docker-control` network and has **no published host port**. External LAN/Tailscale clients therefore cannot use the Docker API directly.
+7. **Docker Desktop:** The proxy is the only service that mounts `/var/run/docker.sock`; it forwards only the Docker API capabilities enabled by its configuration to the Docker Desktop Engine.
+
+This separation keeps the public ZCode access path (`3030`) independent from the Docker control path. The Docker API is intended to remain an internal container-to-container connection.
 ## Documentation
 
 - [`docs/SETUP_AND_PATCH_GUIDE.md`](docs/SETUP_AND_PATCH_GUIDE.md) — complete setup, Docker deployment, patching, build, verification, and upgrade workflow.

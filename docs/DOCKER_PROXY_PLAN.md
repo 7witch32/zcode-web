@@ -1,4 +1,4 @@
-# ZCode Docker — Docker API Proxy Plan
+# ZCode Web — Docker API Proxy Plan
 
 ## 1. Objective
 Add a restricted Docker API Proxy so the ZCode backend container can operate Docker on the Windows host's Docker Desktop daemon without exposing the Docker API to LAN/Tailscale clients.

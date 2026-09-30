@@ -1,4 +1,4 @@
-# ZCode Docker — Setup & Local Patch Guide
+# ZCode Web — Setup & Local Patch Guide
 
 ## 1. Purpose
 
@@ -85,7 +85,7 @@ Also verify desktop/tablet behavior, container health, HTTP 3030, and persistent
 git status
 git diff
 git add -A
-git commit -m "fix: preserve local ZCode Docker patches"
+git commit -m "fix: preserve local ZCode Web patches"
 ```
 
 Optionally tag a known-good deployment:

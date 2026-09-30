@@ -1,4 +1,4 @@
-# ZCode Docker
+# ZCode Web
 
 A Docker-based ZCode backend with a persistent application data volume and local patches maintained separately from the upstream ZCode source.
 

@@ -1,4 +1,4 @@
-# Local Patch Registry — ZCode Docker
+# Local Patch Registry — ZCode Web
 
 > Single source of truth for repository-local changes that must survive upstream ZCode updates.
 

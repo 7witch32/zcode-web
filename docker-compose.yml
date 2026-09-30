@@ -1,0 +1,69 @@
+services:
+  zcode:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: zcode-web
+    restart: unless-stopped
+    ports:
+      - "3030:3030"
+    environment:
+      PORT: "3030"
+      ZCODE_SERVER_HOST: "0.0.0.0"
+      ZCODE_DATA_BASE_DIR: "/data"
+      # Persist the CLI session database in the Docker data volume.
+      # Without this, ~/.zcode/cli/db/db.sqlite lives under /home/node and is lost
+      # when the container is recreated, leaving tasks-index entries pointing at
+      # sessions that V4 cold-resume can no longer find.
+      ZCODE_SESSION_DB_PATH: "/data/.zcode/cli/db/db.sqlite"
+      ZCODE_WEB_STATIC_ROOT: "/app/web-dist"
+      ZCODE_SERVER_AUTH_TOKEN: "${ZCODE_SERVER_AUTH_TOKEN:-}"
+      # Docker CLI/API access is restricted to the internal socket proxy network.
+      DOCKER_HOST: "tcp://docker-api-proxy:2375"
+    networks:
+      - default
+      - docker-control
+    volumes:
+      - zcode-data:/data
+      - ./workspace:/workspace
+    working_dir: /workspace
+
+  docker-api-proxy:
+    image: ghcr.io/tecnativa/docker-socket-proxy:v0.5.0
+    container_name: zcode-docker-api-proxy
+    restart: unless-stopped
+    environment:
+      # Keep the proxy reachable only by services on docker-control.
+      CONTAINERS: "1"
+      ALLOW_START: "1"
+      ALLOW_STOP: "1"
+      ALLOW_RESTARTS: "1"
+      EXEC: "1"
+      IMAGES: "1"
+      NETWORKS: "1"
+      VOLUMES: "1"
+      BUILD: "1"
+      SESSION: "1"
+      POST: "1"
+      INFO: "0"
+      SYSTEM: "0"
+      AUTH: "0"
+      SECRETS: "0"
+      SWARM: "0"
+      SERVICES: "0"
+      TASKS: "0"
+      PLUGINS: "0"
+      NODES: "0"
+      CONFIGS: "0"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - docker-control
+
+volumes:
+  zcode-data:
+
+networks:
+  docker-control:
+    name: zcode-docker-control
+    internal: true

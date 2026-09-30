@@ -60,6 +60,17 @@ Windows host / Docker Desktop
 7. **Docker Desktop:** The proxy is the only service that mounts `/var/run/docker.sock`; it forwards only the Docker API capabilities enabled by its configuration to the Docker Desktop Engine.
 
 This separation keeps the public ZCode access path (`3030`) independent from the Docker control path. The Docker API is intended to remain an internal container-to-container connection.
+## What has been changed
+
+This repository contains the local Docker deployment and the changes needed for the current ZCode Web setup:
+
+- **Docker backend:** packaged ZCode as `zcode-web` with persistent `/data` and `/workspace` mounts.
+- **Session persistence:** keeps the ZCode CLI session database under `/data` so container recreation does not lose session state.
+- **Docker API access:** added a restricted internal Docker API Proxy so ZCode can manage Docker Desktop without exposing the Docker API to LAN/Tailscale clients.
+- **Mobile Sidebar:** fixed iPhone/phone Sidebar toggle and left-edge swipe-to-open behavior, including correct push layout and protection against mobile flex shrinking.
+- **Operational docs:** added setup/upgrade instructions and a maintained local-patch registry so these changes can be checked and reapplied after upstream updates.
+
+For implementation details, affected source files, rationale, verification history, and upgrade guidance, see the documents below.
 ## Documentation
 
 - [`docs/SETUP_AND_PATCH_GUIDE.md`](docs/SETUP_AND_PATCH_GUIDE.md) — complete setup, Docker deployment, patching, build, verification, and upgrade workflow.

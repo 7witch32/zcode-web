@@ -73,11 +73,14 @@ import {
 import { useZCodeIntl } from "@/i18n/IntlProvider.js";
 import { logger } from "@/logger.js";
 import { NewTaskButtonGroup } from "@/NewTaskButtonGroup.js";
+import { TaskList } from "@/TaskList.js";
 import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { useZCodeStore } from "@/store/StoreProvider.js";
 import { useTabStore } from "@/store/TabStoreProvider.js";
 import { isWorkspaceReadOnly, isWorkspaceTab, type WorkspaceTabState } from "@/store/tabStore.js";
 import { useWorkspaceTaskLists } from "@/hooks/useWorkspaceTaskLists.js";
+import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
+import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
 import {
   persistSidebarTaskPreferences,
   readSidebarTaskPreferences,
@@ -218,6 +221,110 @@ function resolveSidebarTaskViewMode(params: {
     return "grouped";
   }
   return "workspace";
+}
+
+function HistoricalWorkspaceTaskGroup({
+  workspacePath,
+  workspaceIdentity,
+  label,
+  tasks,
+  loading,
+  onSelectTask,
+  onRefresh,
+}: {
+  workspacePath: string;
+  workspaceIdentity?: string;
+  label: string;
+  tasks: ZCodeTaskMeta[];
+  loading: boolean;
+  onSelectTask: (workspacePath: string, taskId: string, workspaceIdentity?: string) => void;
+  onRefresh: () => Promise<void>;
+}) {
+  const services = useBaseWorkspaceServices();
+  const taskById = useMemo(() => new Map(tasks.map((task) => [task.taskId, task])), [tasks]);
+  const handleRename = useCallback(
+    async (taskId: string, title: string) => {
+      const task = taskById.get(taskId);
+      if (!task) return null;
+      const result = await services.zcodeTaskService.renameTask({
+        taskId,
+        workspacePath: task.workspacePath,
+        ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
+        title,
+      });
+      await onRefresh();
+      return result;
+    },
+    [onRefresh, services.zcodeTaskService, taskById],
+  );
+  const handleSetPinned = useCallback(
+    async (taskId: string, pinned: boolean) => {
+      const task = taskById.get(taskId);
+      if (!task) return null;
+      const result = await services.zcodeTaskService.setTaskPinned({
+        taskId,
+        workspacePath: task.workspacePath,
+        ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
+        pinned,
+      });
+      await onRefresh();
+      return result;
+    },
+    [onRefresh, services.zcodeTaskService, taskById],
+  );
+  const handleArchive = useCallback(
+    async (taskId: string) => {
+      const task = taskById.get(taskId);
+      if (!task) return null;
+      const result = await services.zcodeTaskService.archiveTask({
+        taskId,
+        workspacePath: task.workspacePath,
+        ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
+      });
+      await onRefresh();
+      return result;
+    },
+    [onRefresh, services.zcodeTaskService, taskById],
+  );
+  const handleUnread = useCallback(
+    async (taskId: string, unread: boolean) => {
+      const task = taskById.get(taskId);
+      if (!task) return null;
+      const result = await services.zcodeTaskService.setTaskUnread({
+        taskId,
+        workspacePath: task.workspacePath,
+        ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
+        unread,
+      });
+      await onRefresh();
+      return result;
+    },
+    [onRefresh, services.zcodeTaskService, taskById],
+  );
+
+  return (
+    <div className="rounded-lg border border-border/60 bg-background/30 p-1">
+      <div className="flex h-8 items-center gap-2 px-2 text-ui-base text-foreground">
+        <Folder className="size-3.5 shrink-0 text-foreground-subtle" />
+        <span className="min-w-0 truncate">{label}</span>
+      </div>
+      <TaskList
+        workspacePath={workspacePath}
+        workspaceIdentity={workspaceIdentity}
+        tasks={tasks}
+        activeTaskId={null}
+        onSelectTask={(taskId) => onSelectTask(workspacePath, taskId, workspaceIdentity)}
+        showCreateButton={false}
+        showFooter={false}
+        loading={loading}
+        onRenameTask={handleRename}
+        onSetTaskPinned={handleSetPinned}
+        onArchiveTask={handleArchive}
+        onSetTaskUnread={handleUnread}
+        showEmptyState={false}
+      />
+    </div>
+  );
 }
 
 export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
@@ -567,6 +674,18 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
     taskOrganizeBy,
   });
   const effectiveTaskViewMode = taskViewMode;
+  // 根因：默认 Project/Workspace 视图只按已打开的 projectWorkspaceTabs 查询任务，
+  // 历史 workspace 不在 tabs 时就永远没有 query，必须在全局 sidebar 边界直接发现 tasks-index。
+  const globalWorkspaceTaskList = useGlobalTaskList({
+    kind: "active",
+    workspaceTabs: projectWorkspaceTabs,
+    includeAllWorkspaces: effectiveTaskViewMode === "workspace",
+    enabled: effectiveTaskViewMode === "workspace",
+    sortBy: taskSortBy,
+    searchQuery: "",
+    expanded: true,
+    collapsedLimit: WORKSPACE_TASK_PAGE_SIZE,
+  });
   const visibleWorkspaceTaskKeys = useMemo(
     () =>
       resolveVisibleWorkspaceTaskKeys({
@@ -645,6 +764,35 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
       ),
     [workspaceTaskLists.groups],
   );
+  const openWorkspaceKeys = useMemo(
+    () =>
+      new Set(
+        projectWorkspaceTabs.map((tab) =>
+          buildTaskWorkspaceKey(tab.workspacePath, tab.workspaceIdentity),
+        ),
+      ),
+    [projectWorkspaceTabs],
+  );
+  const historicalWorkspaceTaskGroups = useMemo(() => {
+    const groups = new Map<
+      string,
+      { workspacePath: string; workspaceIdentity?: string; items: ZCodeTaskMeta[] }
+    >();
+    for (const task of globalWorkspaceTaskList.items) {
+      const key = buildTaskWorkspaceKey(task.workspacePath, task.workspaceIdentity);
+      if (openWorkspaceKeys.has(key)) {
+        continue;
+      }
+      const group = groups.get(key) ?? {
+        workspacePath: task.workspacePath,
+        ...(task.workspaceIdentity ? { workspaceIdentity: task.workspaceIdentity } : {}),
+        items: [],
+      };
+      group.items.push(task);
+      groups.set(key, group);
+    }
+    return [...groups.values()];
+  }, [globalWorkspaceTaskList.items, openWorkspaceKeys]);
   const handleShowMoreWorkspaceTasks = useCallback((workspaceKey: string) => {
     setWorkspaceTaskVisibleLimitByKey((current) =>
       increaseWorkspaceTaskVisibleLimit(current, workspaceKey),
@@ -1561,6 +1709,32 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
                                       })}
                                     </ul>
                                   </SortableContext>
+                                  {historicalWorkspaceTaskGroups.length > 0 ? (
+                                    <div className="space-y-2 border-t border-border/50 pt-2">
+                                      {historicalWorkspaceTaskGroups.map((group) => {
+                                        const label =
+                                          group.workspacePath
+                                            .replace(/[\\/]+$/, "")
+                                            .split(/[\\/]/)
+                                            .pop() || group.workspacePath;
+                                        return (
+                                          <HistoricalWorkspaceTaskGroup
+                                            key={buildTaskWorkspaceKey(
+                                              group.workspacePath,
+                                              group.workspaceIdentity,
+                                            )}
+                                            workspacePath={group.workspacePath}
+                                            workspaceIdentity={group.workspaceIdentity}
+                                            label={label}
+                                            tasks={group.items}
+                                            loading={globalWorkspaceTaskList.loading}
+                                            onSelectTask={onSelectTask}
+                                            onRefresh={globalWorkspaceTaskList.refresh}
+                                          />
+                                        );
+                                      })}
+                                    </div>
+                                  ) : null}
                                   {typeof document === "undefined"
                                     ? null
                                     : createPortal(
@@ -1649,6 +1823,7 @@ export const WorkspaceSidebar = memo(function WorkspaceSidebarComponent({
             onLocaleChange={handleLocaleChange}
             onThemeChange={handleThemeChange}
             onSettingsButtonClick={openSettingsTab}
+            onOpenCommandCenter={onOpenCommandCenter}
             onUsageClick={openSettingsTab}
             onUpgradeClick={handleOpenCodingPlanUpgrade}
             onLogin={onLogin}

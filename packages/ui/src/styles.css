@@ -2051,3 +2051,17 @@ body {
 .prompt-mention[data-mention-category="plugins"]::before {
   border-radius: var(--radius-sm);
 }
+
+/* iOS Safari zooms focused editable controls below 16px. Keep the normal UI scale on touch devices while preventing focus zoom. */
+@media (hover: none) and (pointer: coarse) {
+  .zcode-chat-input {
+    font-size: 16px;
+  }
+}
+
+/* iOS Safari zooms focused editable controls below 16px. Keep the normal UI scale on touch devices while preventing focus zoom. */
+@media (hover: none) and (pointer: coarse) {
+  [contenteditable="true"].min-h-10.max-h-40 {
+    font-size: 16px;
+  }
+}

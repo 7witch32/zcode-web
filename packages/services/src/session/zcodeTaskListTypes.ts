@@ -12,6 +12,8 @@ export interface ZCodeTaskListWorkspaceScope {
 export interface ZCodeTaskListQuery {
   kind: ZCodeTaskListKind;
   workspaceScopes: ZCodeTaskListWorkspaceScope[];
+  /** When true, query all indexed workspaces instead of only workspaceScopes. */
+  includeAllWorkspaces?: boolean;
   sortBy: ZCodeTaskListSortBy;
   search?: string;
   limit?: number;
@@ -101,7 +103,9 @@ export type ZCodeGroupedTaskViewStructureTopOrder =
   | { type: "task"; workspaceKey: string; taskId: string; sortOrder: number };
 
 export interface ZCodeGroupedTaskViewStructure {
-  /** 已按 workspaceScopes 可见性过滤的 group（bootstrap workspace group 只在其 workspace 可见）。 */
+  /** Active task rows included for global cold-start discovery. */
+  tasks: ZCodeTaskListItem[];
+  /** Group visibility is scoped unless includeAllWorkspaces was requested. */
   groups: ZCodeTaskGroup[];
   /** 全量组成员（含不可见 group 的成员——顶层排除规则需要全量判断）。 */
   members: ZCodeGroupedTaskViewStructureMember[];

@@ -15,9 +15,7 @@ import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { logger } from "@/logger.js";
 import { buildGroupedTaskViewFromSessions } from "@/lib/buildGroupedTaskViewFromSessions.js";
 import { mergeTaskListMembershipFields } from "@/v4/taskListRowActivity.js";
-import { fetchTaskListMembershipSets } from "@/lib/taskListMembershipSets.js";
 import { useTaskListMembershipVersion } from "@/v4/taskListMembershipVersion.js";
-import { useGlobalTaskList } from "@/hooks/useGlobalTaskList.js";
 import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { buildTaskEntityKey, buildTaskWorkspaceKey } from "@/lib/taskQueryCache.js";
 import { mergeTaskWithOptimisticMeta } from "@/lib/zcodeTaskMetaMerge.js";
@@ -622,14 +620,6 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
     // eslint-disable-next-line react-hooks/exhaustive-deps -- 值签名等价即复用，避免父级数组换身份触发刷新环。
     [localWorkspaceScopeSignature],
   );
-  const sessionsIndexScopes = useMemo(
-    () =>
-      scopes.map((scope) => ({
-        workspacePath: scope.workspacePath,
-        ...(scope.workspaceIdentity ? { workspaceIdentity: scope.workspaceIdentity } : {}),
-      })),
-    [scopes],
-  );
   const [view, setView] = useState<ZCodeGroupedTaskView>(
     () => readCachedGroupedView(localWorkspaceScopeSignature) ?? { nodes: [] },
   );
@@ -654,23 +644,12 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
       }),
     ),
   );
-  const controllerTaskFacts = useGlobalTaskList({
-    kind: "active",
-    workspaceTabs: localWorkspaceTabs,
-    sortBy: "updated",
-    searchQuery: "",
-    expanded: true,
-    collapsedLimit: 1,
-  });
-  const sessionsIndexItems = controllerTaskFacts.items;
-  // 缓存命中即视为已初始化：重挂载后 Controller 列表会重新进入 loading，若不把闩锁一起
-  // 从缓存种下，第一帧仍会关门闪一下。
   const initializedLatchRef = useRef(
     readCachedGroupedView(localWorkspaceScopeSignature) !== undefined,
   );
   const initialized = isGroupedTaskViewInitialized({
     remoteDataInitialized,
-    hydratingEndpointKeys: controllerTaskFacts.loading ? ["window-controller"] : [],
+    hydratingEndpointKeys: [],
     previouslyInitialized: initializedLatchRef.current,
   });
   // 渲染期写 ref 的前提（禁止照搬到非单调状态）：本 ref 是单调闩锁（false→true，永不回落），
@@ -678,8 +657,6 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
   // 但对单调闩锁而言「提前置位」等价于「提前就绪」，只会让门禁更早开门，不会产生错误状态。
   // 换成任何可回落 / 依赖提交顺序的状态，这个写法就会漏帧且不可复现——那种状态必须用 effect。
   initializedLatchRef.current = initialized;
-  const sessionsIndexItemsRef = useRef(sessionsIndexItems);
-  sessionsIndexItemsRef.current = sessionsIndexItems;
   // pin/archive 归属版本：mutation 后 bump，grouped 视图（非 pinned 非 archived）随之权威 re-filter。
   const membershipVersion = useTaskListMembershipVersion();
   const optimisticTaskOverlayByWorkspaceKey = useWorkspaceTaskOptimisticOverlayByWorkspaceKey(
@@ -718,11 +695,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
   // sessions-index 内容帧（title/status）变化。按「membershipVersion + 结构版本 + scope 签名」
   // 缓存，内容帧触发的 refresh 只做内存 join，不发 RPC。分组 mutation 路径显式失效。
   const [remoteDataLoader] = useState(
-    () =>
-      new GroupedRemoteDataSingleFlight<{
-        structure: ZCodeGroupedTaskViewStructure;
-        membership: Awaited<ReturnType<typeof fetchTaskListMembershipSets>>;
-      }>(),
+    () => new GroupedRemoteDataSingleFlight<ZCodeGroupedTaskViewStructure>(),
   );
   const invalidateRemoteData = useCallback(() => {
     remoteDataLoader.invalidate();
@@ -738,8 +711,8 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
     }
     try {
       // tasks-index 同时提供持久 task 行和分组结构；sessions-index 只 enrich activity/detail。
-      // grouped 侧边栏必须跟随当前打开的 workspace scope，
-      // 不传 includeAllWorkspaces，避免其它 workspace 的分组混入。
+      // grouped sidebar 是全局 session browser：冷启动时必须读取所有 indexed workspaces，
+      // 不能要求用户先打开 directory 才能看到它的历史 sessions。
       const remoteDataKey = [
         membershipVersion,
         taskListVersionSignature,
@@ -748,36 +721,36 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
           .join("|"),
       ].join("::");
       const remoteData = await remoteDataLoader.load(remoteDataKey, async () => {
-        const [structureResult, membershipResult] = await Promise.all([
-          services.zcodeTaskService.listGroupedTaskViewStructure({
-            workspaceScopes: scopes,
-          }),
-          fetchTaskListMembershipSets({
-            service: services.zcodeTaskService,
-            scopes: sessionsIndexScopes,
-          }),
-        ]);
-        return {
-          structure: structureResult,
-          membership: membershipResult,
-        };
+        return services.zcodeTaskService.listGroupedTaskViewStructure({
+          workspaceScopes: scopes,
+          includeAllWorkspaces: true,
+        });
       });
       if (
         requestIdRef.current === requestId &&
         remoteDataLoader.isCurrent(remoteDataKey, remoteData)
       ) {
-        const { structure, membership } = remoteData;
+        const taskIndexItems = remoteData.tasks;
         const nextView = buildGroupedTaskViewFromSessions({
-          structure,
-          taskIndexItems: membership.taskIndexItems,
-          sessions: sessionsIndexItemsRef.current,
-          pinnedIds: membership.pinnedIds,
-          archivedIds: membership.archivedIds,
-          deletedIds: membership.deletedIds,
+          structure: remoteData,
+          taskIndexItems,
+          sessions: taskIndexItems,
+          pinnedIds: new Set(),
+          archivedIds: new Set(),
+          deletedIds: new Set(),
         });
         // 内容没变时复用旧视图/旧节点引用，setState 同引用直接 bail，避免整列表无效重渲染。
         // 用 viewRef 读当前视图而不是在 updater 里做副作用：StrictMode 会重复调用 updater。
         const stabilizedView = stabilizeGroupedView(viewRef.current, nextView);
+        logger.info("[global-task-discovery] grouped renderer result", {
+          includeAllWorkspaces: true,
+          workspaceScopeCount: scopes.length,
+          taskIndexItemCount: taskIndexItems.length,
+          structureGroupCount: remoteData.groups.length,
+          structureMemberCount: remoteData.members.length,
+          structureTopLevelOrderCount: remoteData.topLevelOrders.length,
+          renderedNodeCount: stabilizedView.nodes.length,
+        });
         writeCachedGroupedView(localWorkspaceScopeSignature, stabilizedView);
         setView(stabilizedView);
       }
@@ -800,7 +773,6 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
     membershipVersion,
     remoteDataLoader,
     scopes,
-    sessionsIndexScopes,
     services.zcodeTaskService,
     taskListVersionSignature,
   ]);
@@ -892,7 +864,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
   // sessions-index 内容变化再触发内存 join；避免 mount effect 与 index effect 首帧重复发起请求。
   useEffect(() => {
     void refresh();
-  }, [refresh, sessionsIndexItems]);
+  }, [refresh, taskListVersionSignature]);
 
   const createGroup = useCallback(async (): Promise<ZCodeTaskGroup> => {
     setSaving(true);

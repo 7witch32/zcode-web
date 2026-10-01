@@ -229,6 +229,20 @@ function buildBaselineMetaFromSummary(
     provider: ZCODE_AGENT_PROVIDER,
     ...(summary.parentSessionId ? { forkedFromTaskId: summary.parentSessionId } : {}),
     ...(status ? { status } : {}),
+    ...(summary.pendingInteraction
+      ? {
+          pendingInteraction: {
+            interactionId: summary.pendingInteraction.interactionId,
+            kind: summary.pendingInteraction.kind,
+            ...(summary.pendingInteraction.toolName
+              ? { toolName: summary.pendingInteraction.toolName }
+              : {}),
+            ...(summary.pendingInteraction.autoResolution
+              ? { autoResolution: summary.pendingInteraction.autoResolution }
+              : {}),
+          },
+        }
+      : {}),
   };
 }
 
@@ -311,6 +325,7 @@ export function createZCodeTaskIndexSyncer(
   // UI 永远收不到 workspace_task_list_changed。把 emitter 上提到 syncer，adapter 改为转发，
   // 让 adapter 路径和 desktop-continuous 路径共用同一份订阅，事件不再分裂。
   const workspaceEmitters = new Map<string, Emitter<ZCodeWorkspaceEvent>>();
+  const GLOBAL_WORKSPACE_EVENT_SCOPE = "*";
   const terminalEventEmitter = new Emitter<ZCodeTaskIndexTerminalEvent>();
   const readyEventEmitter = new Emitter<ZCodeTaskIndexReadyEvent>();
   let disposed = false;
@@ -484,10 +499,7 @@ export function createZCodeTaskIndexSyncer(
       undefined,
       `[list-refresh-trace] emitWorkspaceTaskListChanged reason=${reason} taskId=${target.taskId ?? "-"} workspace=${target.workspacePath} hasMeta=${Boolean(taskMeta)}`,
     );
-    getWorkspaceEmitter({
-      workspacePath: target.workspacePath,
-      workspaceIdentity: target.workspaceIdentity,
-    }).fire({
+    const event: ZCodeWorkspaceTaskListChanged = {
       type: "workspace_task_list_changed",
       workspacePath: target.workspacePath,
       workspaceIdentity: target.workspaceIdentity,
@@ -495,7 +507,12 @@ export function createZCodeTaskIndexSyncer(
       reason,
       ...(taskMeta ? { taskMeta } : {}),
       ...(options?.unreadSignal ? { unreadSignal: options.unreadSignal } : {}),
-    });
+    };
+    getWorkspaceEmitter({
+      workspacePath: target.workspacePath,
+      workspaceIdentity: target.workspaceIdentity,
+    }).fire(event);
+    getWorkspaceEmitter(GLOBAL_WORKSPACE_EVENT_SCOPE).fire(event);
   }
 
   async function resyncTaskIndexRowFromAgent(
@@ -677,6 +694,19 @@ export function createZCodeTaskIndexSyncer(
     // 进入基线（gateway 每个事件都 fan-out），不会漏掉真实收口。
     const becameTerminal =
       previous !== undefined && !isTerminalPhase(previous.phase) && isTerminalPhase(next.phase);
+    const runtimeStateChanged =
+      becameVisibleTask ||
+      previous === undefined ||
+      previous.phase !== next.phase ||
+      previous.pendingInteraction?.interactionId !== next.pendingInteraction?.interactionId ||
+      previous.pendingInteraction?.kind !== next.pendingInteraction?.kind;
+    if (runtimeStateChanged && !becameTerminal) {
+      emitWorkspaceTaskListChanged(
+        broadcastTargetFrom(target),
+        buildBaselineMetaFromSummary(state.target, next),
+        "task_status_changed",
+      );
+    }
     if (becameTerminal) {
       applyTerminalTransition(target, next, {
         moveGroupedTaskToTop: becameVisibleTask,
@@ -1769,6 +1799,27 @@ export function createZCodeTaskIndexSyncer(
     getWorkspaceEmitter,
 
     onDynamicWorkspaceEvent(workspace: WorkspaceEventInput) {
+      // "*" 是 Host 内部的全局任务状态订阅：只观察已经存在的 workspace ingest，
+      // 不会因为侧栏订阅而激活新的 workspace/runtime。
+      if (workspace === GLOBAL_WORKSPACE_EVENT_SCOPE) {
+        return (listener) => {
+          const disposable = getWorkspaceEmitter(GLOBAL_WORKSPACE_EVENT_SCOPE).event(listener);
+          for (const state of workspaceIngests.values()) {
+            for (const summary of state.summaries.values()) {
+              if (summary.phase === "draft") continue;
+              listener({
+                type: "workspace_task_list_changed",
+                workspacePath: state.target.workspacePath,
+                workspaceIdentity: state.target.workspaceIdentity,
+                taskId: summary.sessionId,
+                reason: "task_status_changed",
+                taskMeta: buildBaselineMetaFromSummary(state.target, summary),
+              });
+            }
+          }
+          return disposable;
+        };
+      }
       // 任务列表挂载会为所有 restored workspace 调用本入口。监听事件不代表
       // 用户使用该 workspace，禁止在这里激活 sessions-index 或启动 Agent。
       return getWorkspaceEmitter(workspace).event;

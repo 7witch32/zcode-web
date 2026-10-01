@@ -1802,16 +1802,22 @@ export class TaskIndexRepo {
     params: ZCodeTaskListQuery & { provider?: ZCodeProvider },
   ): Promise<ZCodeTaskListResult> {
     await this.ensureReady();
+    const includeAllWorkspaces = params.includeAllWorkspaces === true;
     const workspaceKeys = normalizeWorkspaceKeys(params.workspaceScopes);
-    if (workspaceKeys.length === 0) {
+    if (!includeAllWorkspaces && workspaceKeys.length === 0) {
       return { items: [], total: 0, hasMore: false };
     }
 
     const search = params.search?.trim();
     const normalizedSearchLike =
       search && search.length > 0 ? `%${search.toLocaleLowerCase()}%` : null;
-    const where = ["deleted = 0", `workspace_key IN (${workspaceKeys.map(() => "?").join(", ")})`];
-    const args: Array<string | number> = [...workspaceKeys];
+    const where = [
+      "deleted = 0",
+      ...(includeAllWorkspaces
+        ? []
+        : [`workspace_key IN (${workspaceKeys.map(() => "?").join(", ")})`]),
+    ];
+    const args: Array<string | number> = includeAllWorkspaces ? [] : [...workspaceKeys];
     if (params.provider) {
       appendZCodeAgentIndexedProviderFilter(where, args, params.provider);
     }
@@ -2263,8 +2269,10 @@ export class TaskIndexRepo {
    */
   async queryGroupedTaskViewStructure(params: {
     workspaceScopes: Array<{ workspacePath: string; workspaceIdentity?: string }>;
+    includeAllWorkspaces?: boolean;
   }): Promise<ZCodeGroupedTaskViewStructure> {
     await this.ensureReady();
+    const includeAllWorkspaces = params.includeAllWorkspaces === true;
     const visibleWorkspaceKeys = new Set(normalizeWorkspaceKeys(params.workspaceScopes));
     const bootstrapRows = this.getDatabase()
       .prepare(
@@ -2292,7 +2300,11 @@ export class TaskIndexRepo {
     const groups = groupRows
       .filter((row) => {
         const bootstrapWorkspaceKey = bootstrapWorkspaceKeyByGroupId.get(row.group_id);
-        return !bootstrapWorkspaceKey || visibleWorkspaceKeys.has(bootstrapWorkspaceKey);
+        return (
+          includeAllWorkspaces ||
+          !bootstrapWorkspaceKey ||
+          visibleWorkspaceKeys.has(bootstrapWorkspaceKey)
+        );
       })
       .map(rowToTaskGroup);
     const memberRows = this.getDatabase()
@@ -2359,7 +2371,7 @@ export class TaskIndexRepo {
         // 历史脏 node_key 跳过：客户端会按 createdAt 补内存序，不致崩溃。
       }
     }
-    return { groups, members, topLevelOrders };
+    return { tasks: [], groups, members, topLevelOrders };
   }
 
   async applyGroupedTaskViewOrder(

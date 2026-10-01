@@ -1,23 +1,10 @@
-# ZCode Web
+﻿# ZCode Web
 
-A Docker-based ZCode backend with a persistent application data volume and local patches maintained separately from the upstream ZCode source.
-
-## What this repository is
-
-This repository is used to run ZCode as a Docker backend while keeping local changes reproducible across upstream updates.
-
-Key goals:
-
-- Run ZCode through Docker.
-- Keep application state persistent in `/data`.
-- Keep local fixes documented and easy to reapply after upstream updates.
-- Provide mobile access through the existing ZCode web interface.
+A Docker-based ZCode backend with persistent application state, a restricted internal Docker API proxy, and local WebUI patches maintained separately from upstream ZCode.
 
 ## Architecture overview
 
-ZCode Web is deployed as a Docker-based backend. The browser/mobile client connects to the WebUI through the Windows host, while ZCode reaches Docker Desktop through an isolated internal API proxy.
-
-```text
+`	ext
 Browser / iPhone / iPad
         |
         | Tailscale (remote) or LAN (local)
@@ -45,64 +32,43 @@ Windows host / Docker Desktop
                 | /var/run/docker.sock
                 v
         Docker Desktop Engine
-                |
-                +-- project/test containers
-```
+`
 
-### Request and execution flow
+The client-facing path is port 3030. The Docker API remains internal to the Docker network; LAN/Tailscale clients do not connect to the Docker API directly. Tailscale runs on the Windows host rather than inside the ZCode container.
 
-1. **Client access:** A browser or mobile device opens the ZCode WebUI. For remote access, traffic reaches the Windows host through Tailscale; Tailscale itself runs on the host rather than inside the ZCode container.
-2. **WebUI/backend:** The `zcode-web` container publishes port `3030`. The client does not connect directly to the Docker API.
-3. **Persistent state:** `/data` is backed by the `zcode-data` Docker volume, so recreating the application container does not intentionally erase ZCode state, sessions, or configuration stored there.
-4. **Workspace:** `./workspace` is mounted at `/workspace` for the working files used by ZCode.
-5. **Docker control:** When ZCode needs to create, inspect, start, stop, execute in, or otherwise manage Docker resources, its Docker client uses `DOCKER_HOST=tcp://docker-api-proxy:2375`.
-6. **Isolation:** The API proxy is connected to the dedicated internal `docker-control` network and has **no published host port**. External LAN/Tailscale clients therefore cannot use the Docker API directly.
-7. **Docker Desktop:** The proxy is the only service that mounts `/var/run/docker.sock`; it forwards only the Docker API capabilities enabled by its configuration to the Docker Desktop Engine.
+## Current local behavior
 
-This separation keeps the public ZCode access path (`3030`) independent from the Docker control path. The Docker API is intended to remain an internal container-to-container connection.
-## What has been changed
+- **Persistent sessions:** ZCode session data is stored under /data so application-container recreation does not intentionally erase state.
+- **Global Sidebar sessions:** persisted sessions from unopened workspaces are discoverable from the global Sidebar after cold start.
+- **Cross-session live status:** sessions running or waiting for interaction remain visibly up to date while another workspace/session is open.
+- **Global pinned sessions:** pinning a session keeps it visible in the global Pinned section even when it belongs to another workspace.
+- **iPhone/iPad focus:** the chat prompt uses a touch-device 16px editable font boundary to prevent iOS Safari focus zoom.
+- **Mobile Sidebar:** portrait touch toggle, left-edge swipe-to-open, push layout, and viewport-sized New Session behavior are preserved.
+- **Docker API proxy:** ZCode can manage Docker Desktop through the restricted internal proxy without publishing the Docker API.
 
-This repository contains the local Docker deployment and the changes needed for the current ZCode Web setup:
-
-- **Docker backend:** packaged ZCode as `zcode-web` with persistent `/data` and `/workspace` mounts.
-- **Session persistence:** keeps the ZCode CLI session database under `/data` so container recreation does not lose session state.
-- **Docker API access:** added a restricted internal Docker API Proxy so ZCode can manage Docker Desktop without exposing the Docker API to LAN/Tailscale clients.
-- **Mobile Sidebar:** fixed iPhone/phone Sidebar toggle and left-edge swipe-to-open behavior, including correct push layout and protection against mobile flex shrinking.
-- **Operational docs:** added setup/upgrade instructions and a maintained local-patch registry so these changes can be checked and reapplied after upstream updates.
-
-For implementation details, affected source files, rationale, verification history, and upgrade guidance, see the documents below.
 ## Documentation
 
-- [`docs/SETUP_AND_PATCH_GUIDE.md`](docs/SETUP_AND_PATCH_GUIDE.md) — complete setup, Docker deployment, patching, build, verification, and upgrade workflow.
-- [`docs/LOCAL_PATCHES.md`](docs/LOCAL_PATCHES.md) — single source of truth for local patches, including rationale, affected files, implementation details, and protected behavior.
-- [`docs/DOCKER_PROXY_PLAN.md`](docs/DOCKER_PROXY_PLAN.md) — Docker API Proxy plan and related design notes.
+- docs/LOCAL_PATCHES.md - source of truth for protected local behavior and upgrade checks.
+- docs/GLOBAL_SESSION_SIDEBAR_SPEC.md - architecture/specification for global session discovery.
+- docs/SETUP_AND_PATCH_GUIDE.md - setup, Docker deployment, build, verification, and upstream update workflow.
+- docs/DOCKER_PROXY_PLAN.md - Docker API Proxy design/reference.
 
 ## Important: persistent data
 
-Do **not** delete or reset the `/data` volume when rebuilding or updating the application container. The application container may be recreated; persistent application state must remain intact.
-
-## Local patches
-
-Local behavior that differs from upstream is documented in `docs/LOCAL_PATCHES.md`. Before updating the upstream ZCode source, review that file and verify whether each protected behavior is still required or has been implemented upstream.
-
-The current maintained patch includes the iPhone/mobile Sidebar behavior, including portrait toggle support, left-edge swipe-to-open, correct Sidebar layout behavior, and protection against mobile flex shrinking.
+Do **not** delete or reset the /data volume when rebuilding or updating the application container. The application container may be recreated; persistent application state must remain intact.
 
 ## Quick start
 
-For a fresh setup or an upstream update, follow:
-
-[`docs/SETUP_AND_PATCH_GUIDE.md`](docs/SETUP_AND_PATCH_GUIDE.md)
-
-The guide covers the full workflow rather than duplicating operational commands here.
+For a fresh setup or upstream update, follow docs/SETUP_AND_PATCH_GUIDE.md. The guide covers the full operational workflow rather than duplicating commands here.
 
 ## Repository maintenance
 
-Keep the repository focused on durable source changes and documentation. One-off implementation plans, temporary test files, generated build output, logs, and secrets should not be kept as permanent project documentation.
+Keep the repository focused on durable source changes and documentation. Remove one-off implementation plans, temporary test files, generated build output, logs, and secrets before committing.
 
-When a local patch is changed:
+When a protected local behavior changes:
 
-1. Update `docs/LOCAL_PATCHES.md`.
+1. Update docs/LOCAL_PATCHES.md.
 2. Verify the affected behavior.
 3. Rebuild/recreate only the application container as required.
-4. Confirm the container is healthy and the web endpoint responds.
-5. Commit the verified changes once Git is initialized for the repository.
+4. Confirm the container is healthy and the WebUI endpoint responds.
+5. Commit the verified changes.

@@ -1,4 +1,4 @@
-/* oxlint-disable eslint(max-lines) -- 迁移期需要在一个门面里集中维护旧 task projection 到 ZCode session 的协议适配。 */
+/* oxlint-disable eslint(max-lines) -- è¿ç§»æœŸéœ€è¦åœ¨ä¸€ä¸ªé—¨é¢é‡Œé›†ä¸­ç»´æŠ¤æ—§ task projection åˆ° ZCode session çš„åè®®é€‚é…ã€‚ */
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
 import { homedir } from "node:os";
@@ -178,8 +178,8 @@ interface TaskOverlay {
 interface CreateZCodeTaskServiceAdapterOptions {
   zcodeAgentService: IZCodeAgentService;
   taskIndexRepo?: TaskIndexRepo;
-  // syncer 现在持有 workspace emitter 和 broadcast 入口，adapter 必须共用同一实例，
-  // 否则 desktop-continuous 路径和 task adapter 路径的事件订阅会分裂成两份，UI 收不全。
+  // syncer çŽ°åœ¨æŒæœ‰ workspace emitter å’Œ broadcast å…¥å£ï¼Œadapter å¿…é¡»å…±ç”¨åŒä¸€å®žä¾‹ï¼Œ
+  // å¦åˆ™ desktop-continuous è·¯å¾„å’Œ task adapter è·¯å¾„çš„äº‹ä»¶è®¢é˜…ä¼šåˆ†è£‚æˆä¸¤ä»½ï¼ŒUI æ”¶ä¸å…¨ã€‚
   taskIndexSyncer: ZCodeTaskIndexSyncer;
   settingService?: Pick<ISettingService, "get">;
   cuaProductMcpServerResolver?: CuaProductMcpServerResolver;
@@ -265,7 +265,7 @@ export function createZCodeTaskServiceAdapter(
   const toolProjectionMemoryByTaskKey = new Map<string, ZCodeToolProjectionMemory>();
   const liveToolProjectionsByTaskKey = new Map<string, Map<string, LiveToolProjection>>();
   let liveToolProjectionOrder = 0;
-  // 内存诊断计数器：只读各 per-task 表的 size。
+  // å†…å­˜è¯Šæ–­è®¡æ•°å™¨ï¼šåªè¯»å„ per-task è¡¨çš„ sizeã€‚
   const memoryDiagnostics = registerMemoryDiagnosticsProvider("task", () => ({
     runtimeCommands: runtimeCommands.size,
     toolMemoryTasks: toolProjectionMemoryByTaskKey.size,
@@ -275,8 +275,8 @@ export function createZCodeTaskServiceAdapter(
   const taskIndexRepo = options.taskIndexRepo ?? new TaskIndexRepo();
   const taskIndexSyncer = options.taskIndexSyncer;
 
-  // 之前 adapter 自带 notifySyncerSession 时把 syncer 视为可选；现在 syncer 是构造必填项，
-  // 简化为直接调用，避免每个 callsite 都做空判断。
+  // ä¹‹å‰ adapter è‡ªå¸¦ notifySyncerSession æ—¶æŠŠ syncer è§†ä¸ºå¯é€‰ï¼›çŽ°åœ¨ syncer æ˜¯æž„é€ å¿…å¡«é¡¹ï¼Œ
+  // ç®€åŒ–ä¸ºç›´æŽ¥è°ƒç”¨ï¼Œé¿å…æ¯ä¸ª callsite éƒ½åšç©ºåˆ¤æ–­ã€‚
   function notifySyncerSession(target: TaskTarget): void {
     taskIndexSyncer.ensureSessionSubscription({
       workspacePath: target.workspacePath,
@@ -300,15 +300,15 @@ export function createZCodeTaskServiceAdapter(
     toolDenylist?: string[];
   }): string[] | undefined {
     const toolDenylist = new Set(params.toolDenylist);
-    // 持久化的 cronAutomationId 不能当成当前 turn 的执行身份，否则定时任务
-    // 跑过一次后，用户在同一会话主动修改调度也永久看不到 CronUpdate。权限必须只看本轮
-    // automationId；cronAutomationId 仅保留任务归属和 UI 展示语义。
+    // æŒä¹…åŒ–çš„ cronAutomationId ä¸èƒ½å½“æˆå½“å‰ turn çš„æ‰§è¡Œèº«ä»½ï¼Œå¦åˆ™å®šæ—¶ä»»åŠ¡
+    // è·‘è¿‡ä¸€æ¬¡åŽï¼Œç”¨æˆ·åœ¨åŒä¸€ä¼šè¯ä¸»åŠ¨ä¿®æ”¹è°ƒåº¦ä¹Ÿæ°¸ä¹…çœ‹ä¸åˆ° CronUpdateã€‚æƒé™å¿…é¡»åªçœ‹æœ¬è½®
+    // automationIdï¼›cronAutomationId ä»…ä¿ç•™ä»»åŠ¡å½’å±žå’Œ UI å±•ç¤ºè¯­ä¹‰ã€‚
     if (params.automationId) {
       for (const toolName of AUTOMATION_MUTATION_TOOL_NAMES) {
         toolDenylist.add(toolName);
       }
     }
-    // 闲时派发轮纵深隐藏 OffPeakCreate；不与 automation 分支合并（cron 轮放行）。
+    // é—²æ—¶æ´¾å‘è½®çºµæ·±éšè— OffPeakCreateï¼›ä¸ä¸Ž automation åˆ†æ”¯åˆå¹¶ï¼ˆcron è½®æ”¾è¡Œï¼‰ã€‚
     if (params.offPeakTaskId) {
       for (const toolName of OFF_PEAK_MUTATION_TOOL_NAMES) {
         toolDenylist.add(toolName);
@@ -362,13 +362,13 @@ export function createZCodeTaskServiceAdapter(
     const key = taskKey(params);
     const activeRunId = activePromptInputIds.get(key);
     if (!activeRunId) {
-      // 手机端 owner command 到达 host 时，task 可能已经终态收口。
-      // 没有 active run 时不能再把旧 command 写入 host 队列，否则会在桌面 shared host 上误发旧输入。
+      // æ‰‹æœºç«¯ owner command åˆ°è¾¾ host æ—¶ï¼Œtask å¯èƒ½å·²ç»ç»ˆæ€æ”¶å£ã€‚
+      // æ²¡æœ‰ active run æ—¶ä¸èƒ½å†æŠŠæ—§ command å†™å…¥ host é˜Ÿåˆ—ï¼Œå¦åˆ™ä¼šåœ¨æ¡Œé¢ shared host ä¸Šè¯¯å‘æ—§è¾“å…¥ã€‚
       throw createTaskOwnerCommandError("No active task owner.", "NO_ACTIVE_TASK_OWNER");
     }
     if (activeRunId !== ownerRunId) {
-      // ownerRunId 是远控请求的 stale 防护边界。
-      // 旧 run 的 enqueue/promote 不能修改当前 task command queue。
+      // ownerRunId æ˜¯è¿œæŽ§è¯·æ±‚çš„ stale é˜²æŠ¤è¾¹ç•Œã€‚
+      // æ—§ run çš„ enqueue/promote ä¸èƒ½ä¿®æ”¹å½“å‰ task command queueã€‚
       throw createTaskOwnerCommandError("Stale task owner command.", "STALE_TASK_OWNER_COMMAND");
     }
   }
@@ -392,14 +392,14 @@ export function createZCodeTaskServiceAdapter(
   ): Promise<void> {
     const startedAt = Date.now();
     notifySyncerSession(target);
-    // live tool projection 只用于当前运行的终态收口。
-    // 新输入开始时必须清掉上一轮 live-only 子工具，避免后续 snapshot 把旧工具补到新回复尾部。
+    // live tool projection åªç”¨äºŽå½“å‰è¿è¡Œçš„ç»ˆæ€æ”¶å£ã€‚
+    // æ–°è¾“å…¥å¼€å§‹æ—¶å¿…é¡»æ¸…æŽ‰ä¸Šä¸€è½® live-only å­å·¥å…·ï¼Œé¿å…åŽç»­ snapshot æŠŠæ—§å·¥å…·è¡¥åˆ°æ–°å›žå¤å°¾éƒ¨ã€‚
     clearLiveToolProjection(target);
     clearStreamingToolInputCache(target);
-    // ZCode task wrapper 的字段仍叫 traceId，但这里语义已经是单次输入 inputId。
-    // 先记录 inputId，后续 ZCode session 事件回投 ZCode Agent 时才能让 UI 终态按输入轮次收口。
+    // ZCode task wrapper çš„å­—æ®µä»å« traceIdï¼Œä½†è¿™é‡Œè¯­ä¹‰å·²ç»æ˜¯å•æ¬¡è¾“å…¥ inputIdã€‚
+    // å…ˆè®°å½• inputIdï¼ŒåŽç»­ ZCode session äº‹ä»¶å›žæŠ• ZCode Agent æ—¶æ‰èƒ½è®© UI ç»ˆæ€æŒ‰è¾“å…¥è½®æ¬¡æ”¶å£ã€‚
     activePromptInputIds.set(taskKey(target), params.traceId);
-    logger.info(params.traceId, "ZCode task facade sendPrompt 开始", {
+    logger.info(params.traceId, "ZCode task facade sendPrompt å¼€å§‹", {
       attachmentCount: params.attachments?.length ?? 0,
       queryId: params.queryId ?? null,
       reason: params.logReason ?? "direct",
@@ -412,10 +412,10 @@ export function createZCodeTaskServiceAdapter(
     try {
       const promptToolDenylist = resolvePromptToolDenylist(params);
       if (params.attachments?.length) {
-        // 遗留（附件命令面）：v4 sendText 的 attachments 是 attachmentRef 引用模型，
-        // 上传/寄存命令面尚未建模（CLI 侧 fork-edit-retry.ts 同款裁决“附件命令面后续”）。
-        // 带附件输入保留旧 session/send，避免手机 replayable 图片/文件输入回归；
-        // 过渡归宿 = v4 附件命令面（届时由 v4 sendText 承接）。
+        // é—ç•™ï¼ˆé™„ä»¶å‘½ä»¤é¢ï¼‰ï¼šv4 sendText çš„ attachments æ˜¯ attachmentRef å¼•ç”¨æ¨¡åž‹ï¼Œ
+        // ä¸Šä¼ /å¯„å­˜å‘½ä»¤é¢å°šæœªå»ºæ¨¡ï¼ˆCLI ä¾§ fork-edit-retry.ts åŒæ¬¾è£å†³â€œé™„ä»¶å‘½ä»¤é¢åŽç»­â€ï¼‰ã€‚
+        // å¸¦é™„ä»¶è¾“å…¥ä¿ç•™æ—§ session/sendï¼Œé¿å…æ‰‹æœº replayable å›¾ç‰‡/æ–‡ä»¶è¾“å…¥å›žå½’ï¼›
+        // è¿‡æ¸¡å½’å®¿ = v4 é™„ä»¶å‘½ä»¤é¢ï¼ˆå±Šæ—¶ç”± v4 sendText æ‰¿æŽ¥ï¼‰ã€‚
         await options.zcodeAgentService.sendPrompt({
           workspacePath: target.workspacePath,
           workspaceIdentity: target.workspaceIdentity,
@@ -428,7 +428,7 @@ export function createZCodeTaskServiceAdapter(
           attachments: params.attachments.map((attachment) => ({
             ...attachment,
           })),
-          // 附件回退只改变载荷传输，不得丢掉本次已解析的模型或执行范围。
+          // é™„ä»¶å›žé€€åªæ”¹å˜è½½è·ä¼ è¾“ï¼Œä¸å¾—ä¸¢æŽ‰æœ¬æ¬¡å·²è§£æžçš„æ¨¡åž‹æˆ–æ‰§è¡ŒèŒƒå›´ã€‚
           modelSelection: params.modelSelection,
           modelExecution: params.modelExecution,
           ...turnAttributionOf(params),
@@ -437,11 +437,11 @@ export function createZCodeTaskServiceAdapter(
           ...(params.clientMode ? { clientMode: params.clientMode } : {}),
         });
       } else {
-        // send 主路径收敛 v4 sendText。幂等键 inputId→commandId 对齐：
-        // CLI 侧以 commandId 为 inputId 起 turn，终态事件 inputId 才能与 host command
-        // queue 的 traceId 对账（completeRuntimeCommandByInputId 语义不变）。
-        // heldQueueDisposition=keepQueueAndSend：旧 session/send 没有 held choice 闸门，
-        // replayable 无人机交互路径按“立即发送、不动队列”等价老语义。
+        // send ä¸»è·¯å¾„æ”¶æ•› v4 sendTextã€‚å¹‚ç­‰é”® inputIdâ†’commandId å¯¹é½ï¼š
+        // CLI ä¾§ä»¥ commandId ä¸º inputId èµ· turnï¼Œç»ˆæ€äº‹ä»¶ inputId æ‰èƒ½ä¸Ž host command
+        // queue çš„ traceId å¯¹è´¦ï¼ˆcompleteRuntimeCommandByInputId è¯­ä¹‰ä¸å˜ï¼‰ã€‚
+        // heldQueueDisposition=keepQueueAndSendï¼šæ—§ session/send æ²¡æœ‰ held choice é—¸é—¨ï¼Œ
+        // replayable æ— äººæœºäº¤äº’è·¯å¾„æŒ‰â€œç«‹å³å‘é€ã€ä¸åŠ¨é˜Ÿåˆ—â€ç­‰ä»·è€è¯­ä¹‰ã€‚
         const ack = await options.zcodeAgentService.sendConversationCommandV4({
           workspacePath: target.workspacePath,
           workspaceIdentity: target.workspaceIdentity,
@@ -476,7 +476,7 @@ export function createZCodeTaskServiceAdapter(
       });
     } catch (error) {
       activePromptInputIds.delete(taskKey(target));
-      logger.warn(params.traceId, "ZCode task facade sendPrompt 失败", {
+      logger.warn(params.traceId, "ZCode task facade sendPrompt å¤±è´¥", {
         durationMs: Date.now() - startedAt,
         error: error instanceof Error ? error.message : String(error),
         queryId: params.queryId ?? null,
@@ -576,10 +576,10 @@ export function createZCodeTaskServiceAdapter(
     if (!command) {
       return;
     }
-    // 手机 host command 在 sendPrompt ACK 后仍要保持 running，
-    // 否则手机刷新拿不到“已开始发送”的 pendingCommands。只有真实终态到达后才能从 host 队列移除。
+    // æ‰‹æœº host command åœ¨ sendPrompt ACK åŽä»è¦ä¿æŒ runningï¼Œ
+    // å¦åˆ™æ‰‹æœºåˆ·æ–°æ‹¿ä¸åˆ°â€œå·²å¼€å§‹å‘é€â€çš„ pendingCommandsã€‚åªæœ‰çœŸå®žç»ˆæ€åˆ°è¾¾åŽæ‰èƒ½ä»Ž host é˜Ÿåˆ—ç§»é™¤ã€‚
     removeRuntimeCommand(params, command.commandId);
-    logger.info(command.traceId, "ZCode task command 终态收口", {
+    logger.info(command.traceId, "ZCode task command ç»ˆæ€æ”¶å£", {
       commandId: command.commandId,
       terminalType,
       taskId: params.taskId,
@@ -614,7 +614,7 @@ export function createZCodeTaskServiceAdapter(
     }
 
     const runningCommand = markRuntimeCommandRunning(params, command);
-    logger.info(runningCommand.traceId, "ZCode task command drain 开始", {
+    logger.info(runningCommand.traceId, "ZCode task command drain å¼€å§‹", {
       commandId: runningCommand.commandId,
       queryId: runningCommand.queryId ?? null,
       reason,
@@ -633,13 +633,13 @@ export function createZCodeTaskServiceAdapter(
         ...turnAttributionOf(
           runningCommand.automationId ? { automationId: runningCommand.automationId } : {},
         ),
-        // v4 sendText 信封保留手机提交端 clientId（pendingCommands 展示与幂等表按提交端区分）。
+        // v4 sendText ä¿¡å°ä¿ç•™æ‰‹æœºæäº¤ç«¯ clientIdï¼ˆpendingCommands å±•ç¤ºä¸Žå¹‚ç­‰è¡¨æŒ‰æäº¤ç«¯åŒºåˆ†ï¼‰ã€‚
         clientId: runningCommand.clientId,
         logReason: "host-command-drain",
       });
     } catch (error) {
       markRuntimeCommandFailed(params, runningCommand, error);
-      logger.warn(runningCommand.traceId, "ZCode task command drain 失败", {
+      logger.warn(runningCommand.traceId, "ZCode task command drain å¤±è´¥", {
         commandId: runningCommand.commandId,
         error: error instanceof Error ? error.message : String(error),
         reason,
@@ -655,7 +655,7 @@ export function createZCodeTaskServiceAdapter(
     try {
       await drainRuntimeCommands(params, reason);
     } catch (error) {
-      logger.warn(undefined, "ZCode task command drain 调度失败", {
+      logger.warn(undefined, "ZCode task command drain è°ƒåº¦å¤±è´¥", {
         error: error instanceof Error ? error.message : String(error),
         reason,
         taskId: params.taskId,
@@ -834,9 +834,9 @@ export function createZCodeTaskServiceAdapter(
     return {
       ...liveTool,
       ...snapshotTool,
-      // 终态 snapshot 来自父 session message parts，可能没有 live mirror 的
-      // subagent parentToolCallId/raw/output。这里把 snapshot 作为终态事实源，同时保留
-      // live 协议事件已经提供的父子归属和大字段，避免 task_complete 后工具树被覆盖丢失。
+      // ç»ˆæ€ snapshot æ¥è‡ªçˆ¶ session message partsï¼Œå¯èƒ½æ²¡æœ‰ live mirror çš„
+      // subagent parentToolCallId/raw/outputã€‚è¿™é‡ŒæŠŠ snapshot ä½œä¸ºç»ˆæ€äº‹å®žæºï¼ŒåŒæ—¶ä¿ç•™
+      // live åè®®äº‹ä»¶å·²ç»æä¾›çš„çˆ¶å­å½’å±žå’Œå¤§å­—æ®µï¼Œé¿å… task_complete åŽå·¥å…·æ ‘è¢«è¦†ç›–ä¸¢å¤±ã€‚
       input: snapshotTool.input ?? liveTool.input,
       output: snapshotTool.output ?? liveTool.output,
       raw: mergeToolRaw(snapshotTool.raw, liveTool.raw),
@@ -956,7 +956,7 @@ export function createZCodeTaskServiceAdapter(
     }
 
     if (changed) {
-      logger.debug(undefined, "ZCode snapshot 合并 live tool projection", {
+      logger.debug(undefined, "ZCode snapshot åˆå¹¶ live tool projection", {
         event: "zcode_task.snapshot.live_tool_projection.merged",
         liveToolCount: liveTools.length,
         mergedToolCount,
@@ -972,9 +972,9 @@ export function createZCodeTaskServiceAdapter(
     const existing = taskTargets.get(params.taskId);
     taskTargets.set(params.taskId, {
       ...params,
-      // cronAutomationId 是会话的 sticky 归属标记，供 UI 展示和任务关联使用，不参与当前
-      // turn 的工具权限。resume/onDynamicTaskEvent 等入口不带值时仍需保留权威归属；明确设置
-      // 或清除只能走 rememberIndexedTaskMeta。
+      // cronAutomationId æ˜¯ä¼šè¯çš„ sticky å½’å±žæ ‡è®°ï¼Œä¾› UI å±•ç¤ºå’Œä»»åŠ¡å…³è”ä½¿ç”¨ï¼Œä¸å‚ä¸Žå½“å‰
+      // turn çš„å·¥å…·æƒé™ã€‚resume/onDynamicTaskEvent ç­‰å…¥å£ä¸å¸¦å€¼æ—¶ä»éœ€ä¿ç•™æƒå¨å½’å±žï¼›æ˜Žç¡®è®¾ç½®
+      // æˆ–æ¸…é™¤åªèƒ½èµ° rememberIndexedTaskMetaã€‚
       cronAutomationId: params.cronAutomationId ?? existing?.cronAutomationId,
     });
   }
@@ -1023,8 +1023,8 @@ export function createZCodeTaskServiceAdapter(
     overlays.set(key, { ...overlays.get(key), ...patch });
   }
 
-  // workspace emitter 已上提到 syncer，adapter 通过 syncer 获取共享 emitter，
-  // 保证 task adapter 路径和 desktop-continuous 路径走同一份订阅，UI 不会漏事件。
+  // workspace emitter å·²ä¸Šæåˆ° syncerï¼Œadapter é€šè¿‡ syncer èŽ·å–å…±äº« emitterï¼Œ
+  // ä¿è¯ task adapter è·¯å¾„å’Œ desktop-continuous è·¯å¾„èµ°åŒä¸€ä»½è®¢é˜…ï¼ŒUI ä¸ä¼šæ¼äº‹ä»¶ã€‚
   function getWorkspaceEmitter(workspace: WorkspaceEventInput): Emitter<ZCodeWorkspaceEvent> {
     return taskIndexSyncer.getWorkspaceEmitter(workspace);
   }
@@ -1053,9 +1053,9 @@ export function createZCodeTaskServiceAdapter(
     getGlobalTaskEmitter(params.taskId).fire(event);
   }
 
-  // 委托到 syncer，让 archive/rename/pin/delete 等 task 元数据变更和
-  // desktop-continuous 路径（turn.completed 等）走同一条广播通道。
-  // 设计修正：reason 必填，发射点必须声明变更类别。
+  // å§”æ‰˜åˆ° syncerï¼Œè®© archive/rename/pin/delete ç­‰ task å…ƒæ•°æ®å˜æ›´å’Œ
+  // desktop-continuous è·¯å¾„ï¼ˆturn.completed ç­‰ï¼‰èµ°åŒä¸€æ¡å¹¿æ’­é€šé“ã€‚
+  // è®¾è®¡ä¿®æ­£ï¼šreason å¿…å¡«ï¼Œå‘å°„ç‚¹å¿…é¡»å£°æ˜Žå˜æ›´ç±»åˆ«ã€‚
   function emitWorkspaceTaskListChanged(
     params: {
       workspacePath: string;
@@ -1095,7 +1095,11 @@ export function createZCodeTaskServiceAdapter(
         olderThanDays: settings.taskAutoArchiveOlderThanDays ?? 7,
       };
     } catch (error) {
-      logger.warn(undefined, "读取 task 自动归档设置失败，跳过本轮自动归档", error);
+      logger.warn(
+        undefined,
+        "è¯»å– task è‡ªåŠ¨å½’æ¡£è®¾ç½®å¤±è´¥ï¼Œè·³è¿‡æœ¬è½®è‡ªåŠ¨å½’æ¡£",
+        error,
+      );
       return null;
     }
   }
@@ -1118,7 +1122,7 @@ export function createZCodeTaskServiceAdapter(
         continue;
       }
       seenWorkspaceKeys.add(key);
-      // 自动归档按工作区、过期时间和完成状态处理所有存量任务，包括列表隐藏的历史记录。
+      // è‡ªåŠ¨å½’æ¡£æŒ‰å·¥ä½œåŒºã€è¿‡æœŸæ—¶é—´å’Œå®ŒæˆçŠ¶æ€å¤„ç†æ‰€æœ‰å­˜é‡ä»»åŠ¡ï¼ŒåŒ…æ‹¬åˆ—è¡¨éšè—çš„åŽ†å²è®°å½•ã€‚
       const archivedTasks = await taskIndexRepo.archiveStaleTasks({
         workspacePath: scope.workspacePath,
         workspaceIdentity: scope.workspaceIdentity,
@@ -1128,15 +1132,15 @@ export function createZCodeTaskServiceAdapter(
       for (const task of archivedTasks) {
         setOverlay(task, { archived: true });
         rememberIndexedTaskMeta(task);
-        // 归属变更（自动归档）：沿用 task_meta_changed 走 membership 重拉收敛；
-        // 先保持现状行为。
+        // å½’å±žå˜æ›´ï¼ˆè‡ªåŠ¨å½’æ¡£ï¼‰ï¼šæ²¿ç”¨ task_meta_changed èµ° membership é‡æ‹‰æ”¶æ•›ï¼›
+        // å…ˆä¿æŒçŽ°çŠ¶è¡Œä¸ºã€‚
         emitWorkspaceTaskListChanged(task, task, "task_meta_changed");
       }
     }
     if (archivedCount > 0) {
       logger.info(
         undefined,
-        `按设置自动归档旧 task 数量=${archivedCount} olderThanDays=${config.olderThanDays}`,
+        `æŒ‰è®¾ç½®è‡ªåŠ¨å½’æ¡£æ—§ task æ•°é‡=${archivedCount} olderThanDays=${config.olderThanDays}`,
       );
     }
   }
@@ -1151,8 +1155,8 @@ export function createZCodeTaskServiceAdapter(
       workspacePath: params.workspacePath,
       workspaceIdentity: params.workspaceIdentity,
       sessionId: params.taskId,
-      // replayable 手机端恢复仍经 task adapter，但 stale model guard 在
-      // session resume 内执行；这里带上当前 UI 模型，避免只保护 desktop continuous 主链路。
+      // replayable æ‰‹æœºç«¯æ¢å¤ä»ç» task adapterï¼Œä½† stale model guard åœ¨
+      // session resume å†…æ‰§è¡Œï¼›è¿™é‡Œå¸¦ä¸Šå½“å‰ UI æ¨¡åž‹ï¼Œé¿å…åªä¿æŠ¤ desktop continuous ä¸»é“¾è·¯ã€‚
       model: params.model ? parseModelPickerValue(params.model) : undefined,
       ...(thoughtLevel ? { thoughtLevel } : {}),
       ...(mcpServers ? { mcpServers } : {}),
@@ -1161,10 +1165,10 @@ export function createZCodeTaskServiceAdapter(
   }
 
   /**
-   * 会话级配置写（模型/思考深度/模式）的 v4 CAS 命令提交。
-   * host 无本地 v4 投影，revision 用 stale ACK 的 revisionAtDecision 收敛（sendHostCasCommandV4）。
-   * 注意与 compact/goal 标注同一坑位：旧协议 stateRevision 与 v4 conversation revision
-   * 是两套计数器，这里全程只用 v4 ACK 回报的 revision，绝不混入旧 expectedRevision。
+   * ä¼šè¯çº§é…ç½®å†™ï¼ˆæ¨¡åž‹/æ€è€ƒæ·±åº¦/æ¨¡å¼ï¼‰çš„ v4 CAS å‘½ä»¤æäº¤ã€‚
+   * host æ— æœ¬åœ° v4 æŠ•å½±ï¼Œrevision ç”¨ stale ACK çš„ revisionAtDecision æ”¶æ•›ï¼ˆsendHostCasCommandV4ï¼‰ã€‚
+   * æ³¨æ„ä¸Ž compact/goal æ ‡æ³¨åŒä¸€å‘ä½ï¼šæ—§åè®® stateRevision ä¸Ž v4 conversation revision
+   * æ˜¯ä¸¤å¥—è®¡æ•°å™¨ï¼Œè¿™é‡Œå…¨ç¨‹åªç”¨ v4 ACK å›žæŠ¥çš„ revisionï¼Œç»ä¸æ··å…¥æ—§ expectedRevisionã€‚
    */
   async function sendConfigCasCommandV4<T extends "switchModelConfig" | "switchCollaborationMode">(
     target: TaskTarget,
@@ -1187,10 +1191,10 @@ export function createZCodeTaskServiceAdapter(
   }
 
   /**
-   * session/setMode → v4 switchCollaborationMode。
-   * auto 例外保真：v4 命令值域刻意排除 auto（「auto 非用户可切，不进 UI 命令面」，
-   * command.ts 裁决），而旧协议 ZCodeSessionMode 含 auto 且旧 op 接受它——为 UI 行为
-   * 零变化，auto 继续走旧 op，其余值一律 v4 原生。过渡归宿 = auto 语义在 v4 侧裁决后收口。
+   * session/setMode â†’ v4 switchCollaborationModeã€‚
+   * auto ä¾‹å¤–ä¿çœŸï¼šv4 å‘½ä»¤å€¼åŸŸåˆ»æ„æŽ’é™¤ autoï¼ˆã€Œauto éžç”¨æˆ·å¯åˆ‡ï¼Œä¸è¿› UI å‘½ä»¤é¢ã€ï¼Œ
+   * command.ts è£å†³ï¼‰ï¼Œè€Œæ—§åè®® ZCodeSessionMode å« auto ä¸”æ—§ op æŽ¥å—å®ƒâ€”â€”ä¸º UI è¡Œä¸º
+   * é›¶å˜åŒ–ï¼Œauto ç»§ç»­èµ°æ—§ opï¼Œå…¶ä½™å€¼ä¸€å¾‹ v4 åŽŸç”Ÿã€‚è¿‡æ¸¡å½’å®¿ = auto è¯­ä¹‰åœ¨ v4 ä¾§è£å†³åŽæ”¶å£ã€‚
    */
   async function switchCollaborationModeViaProtocol(
     target: TaskTarget,
@@ -1224,7 +1228,7 @@ export function createZCodeTaskServiceAdapter(
       onRepair: (history) => {
         logger.warn(
           undefined,
-          `Claude 导入 protocol session 历史异常，按 ${history.source} 回填 taskId=${params.taskId}`,
+          `Claude å¯¼å…¥ protocol session åŽ†å²å¼‚å¸¸ï¼ŒæŒ‰ ${history.source} å›žå¡« taskId=${params.taskId}`,
         );
       },
     });
@@ -1249,8 +1253,8 @@ export function createZCodeTaskServiceAdapter(
       snapshot = await resumeSnapshot(params);
     } catch (error) {
       if (!isSessionMissingError(error)) throw error;
-      // 早期原生历史导入只保存了带 migrationSource 的快照，仍需升级成真实 ZCode session。
-      // 复用导入模块的严格来源校验，避免清理 ACP 时误删这条独立的数据迁移路径。
+      // æ—©æœŸåŽŸç”ŸåŽ†å²å¯¼å…¥åªä¿å­˜äº†å¸¦ migrationSource çš„å¿«ç…§ï¼Œä»éœ€å‡çº§æˆçœŸå®ž ZCode sessionã€‚
+      // å¤ç”¨å¯¼å…¥æ¨¡å—çš„ä¸¥æ ¼æ¥æºæ ¡éªŒï¼Œé¿å…æ¸…ç† ACP æ—¶è¯¯åˆ è¿™æ¡ç‹¬ç«‹çš„æ•°æ®è¿ç§»è·¯å¾„ã€‚
       const history = await readLegacyImportedClaudeHistory(params);
       if (!history) throw error;
       const mcpServers = await resolveProductMcpServers(params.mcpServers);
@@ -1305,8 +1309,8 @@ export function createZCodeTaskServiceAdapter(
               ...(snapshot.projection.lastError.detail
                 ? { detail: snapshot.projection.lastError.detail }
                 : {}),
-              // service snapshot 是 mobile replayable/cold task meta 的来源，不能
-              // 让它与 UI 直接投影的 lastError 产生归因漂移。
+              // service snapshot æ˜¯ mobile replayable/cold task meta çš„æ¥æºï¼Œä¸èƒ½
+              // è®©å®ƒä¸Ž UI ç›´æŽ¥æŠ•å½±çš„ lastError äº§ç”Ÿå½’å› æ¼‚ç§»ã€‚
               ...(snapshot.projection.lastError.attribution
                 ? { attribution: snapshot.projection.lastError.attribution }
                 : {}),
@@ -1323,8 +1327,8 @@ export function createZCodeTaskServiceAdapter(
 
   function rememberIndexedTaskMeta(meta: ZCodeTaskMeta): ZCodeTaskMeta {
     const existing = taskTargets.get(meta.taskId);
-    // 权威归属刷新：index meta 是唯一可以设置/清除 cronAutomationId 的来源，直接以 meta 为准
-    // 写入（绕过 rememberTaskTarget 的 merge-preserve），以便解绑/删除 automation 后能真正清空。
+    // æƒå¨å½’å±žåˆ·æ–°ï¼šindex meta æ˜¯å”¯ä¸€å¯ä»¥è®¾ç½®/æ¸…é™¤ cronAutomationId çš„æ¥æºï¼Œç›´æŽ¥ä»¥ meta ä¸ºå‡†
+    // å†™å…¥ï¼ˆç»•è¿‡ rememberTaskTarget çš„ merge-preserveï¼‰ï¼Œä»¥ä¾¿è§£ç»‘/åˆ é™¤ automation åŽèƒ½çœŸæ­£æ¸…ç©ºã€‚
     taskTargets.set(meta.taskId, {
       ...existing,
       taskId: meta.taskId,
@@ -1340,21 +1344,25 @@ export function createZCodeTaskServiceAdapter(
     reason: "replayable_snapshot" | "resume_task",
   ): Promise<{ model?: string; thoughtLevel?: string }> {
     const meta = await taskIndexRepo.getTaskMeta(params).catch((error) => {
-      logger.warn(undefined, "读取 task index resume hint 失败，继续不带历史配置恢复", {
-        error: error instanceof Error ? error.message : String(error),
-        reason,
-        taskId: params.taskId,
-        workspaceIdentity: params.workspaceIdentity ?? null,
-        workspacePath: params.workspacePath,
-      });
+      logger.warn(
+        undefined,
+        "è¯»å– task index resume hint å¤±è´¥ï¼Œç»§ç»­ä¸å¸¦åŽ†å²é…ç½®æ¢å¤",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          reason,
+          taskId: params.taskId,
+          workspaceIdentity: params.workspaceIdentity ?? null,
+          workspacePath: params.workspacePath,
+        },
+      );
       return null;
     });
     const model = meta?.model?.trim();
     const thoughtLevel = meta?.thoughtLevel?.trim();
     if (model || thoughtLevel) {
-      // task-local thoughtLevel 和 model 一样属于历史 session 恢复 hint。
-      // 不回填 thoughtLevel 时，同 workspace 的 draft 默认值会在 session/resume 后覆盖 active task。
-      logger.info(undefined, "从 task index 回填 ZCode session resume 配置", {
+      // task-local thoughtLevel å’Œ model ä¸€æ ·å±žäºŽåŽ†å² session æ¢å¤ hintã€‚
+      // ä¸å›žå¡« thoughtLevel æ—¶ï¼ŒåŒ workspace çš„ draft é»˜è®¤å€¼ä¼šåœ¨ session/resume åŽè¦†ç›– active taskã€‚
+      logger.info(undefined, "ä»Ž task index å›žå¡« ZCode session resume é…ç½®", {
         model: model || null,
         thoughtLevel: thoughtLevel || null,
         reason,
@@ -1378,7 +1386,7 @@ export function createZCodeTaskServiceAdapter(
     snapshot: ZCodeSessionStateSnapshot,
   ): Promise<ZCodeTaskMeta> {
     const meta = snapshotToMeta(snapshot);
-    // 旧污染标签页的显式恢复不能把只读 child 再次写进主任务索引。
+    // æ—§æ±¡æŸ“æ ‡ç­¾é¡µçš„æ˜¾å¼æ¢å¤ä¸èƒ½æŠŠåªè¯» child å†æ¬¡å†™è¿›ä¸»ä»»åŠ¡ç´¢å¼•ã€‚
     if (snapshot.session.sessionKind === "subagent_child") return meta;
     return syncTaskIndexMeta(meta);
   }
@@ -1403,10 +1411,10 @@ export function createZCodeTaskServiceAdapter(
         patch,
       });
     } catch (error) {
-      // 旧 ZCode session 可能还没有轻量 task index 行。
-      // 状态动作只在点开具体 task 后发生，此处允许按需读取当前 task seed index，
-      // 但侧边栏全量列表查询仍只读 sqlite，不会启动所有 workspace agent。
-      logger.warn(undefined, "task index 缺失，按需从 agent seed 当前 task", error);
+      // æ—§ ZCode session å¯èƒ½è¿˜æ²¡æœ‰è½»é‡ task index è¡Œã€‚
+      // çŠ¶æ€åŠ¨ä½œåªåœ¨ç‚¹å¼€å…·ä½“ task åŽå‘ç”Ÿï¼Œæ­¤å¤„å…è®¸æŒ‰éœ€è¯»å–å½“å‰ task seed indexï¼Œ
+      // ä½†ä¾§è¾¹æ å…¨é‡åˆ—è¡¨æŸ¥è¯¢ä»åªè¯» sqliteï¼Œä¸ä¼šå¯åŠ¨æ‰€æœ‰ workspace agentã€‚
+      logger.warn(undefined, "task index ç¼ºå¤±ï¼ŒæŒ‰éœ€ä»Ž agent seed å½“å‰ task", error);
       await syncTaskIndexSnapshot(await resumeSnapshot(params));
       return taskIndexRepo.updateTaskState({
         workspacePath: params.workspacePath,
@@ -1424,8 +1432,8 @@ export function createZCodeTaskServiceAdapter(
         updatedAt: Date.now(),
       };
       if (event.target) {
-        // session_info_update 经常只携带标题或更新时间；只有事件显式包含
-        // target 时才覆盖 task-index，避免把从 db.sqlite 恢复出的 goal 清成 undefined。
+        // session_info_update ç»å¸¸åªæºå¸¦æ ‡é¢˜æˆ–æ›´æ–°æ—¶é—´ï¼›åªæœ‰äº‹ä»¶æ˜¾å¼åŒ…å«
+        // target æ—¶æ‰è¦†ç›– task-indexï¼Œé¿å…æŠŠä»Ž db.sqlite æ¢å¤å‡ºçš„ goal æ¸…æˆ undefinedã€‚
         patch.target = event.target.target;
       }
       void taskIndexRepo
@@ -1436,7 +1444,7 @@ export function createZCodeTaskServiceAdapter(
           patch,
         })
         .catch((error) => {
-          logger.warn(undefined, "同步 session_info_update 到 task index 失败", error);
+          logger.warn(undefined, "åŒæ­¥ session_info_update åˆ° task index å¤±è´¥", error);
         });
       return;
     }
@@ -1454,7 +1462,7 @@ export function createZCodeTaskServiceAdapter(
           },
         })
         .catch((error) => {
-          logger.warn(undefined, "同步 task_complete 到 task index 失败", error);
+          logger.warn(undefined, "åŒæ­¥ task_complete åˆ° task index å¤±è´¥", error);
         });
       return;
     }
@@ -1479,7 +1487,7 @@ export function createZCodeTaskServiceAdapter(
           },
         })
         .catch((error) => {
-          logger.warn(undefined, "同步 task_error 到 task index 失败", error);
+          logger.warn(undefined, "åŒæ­¥ task_error åˆ° task index å¤±è´¥", error);
         });
     }
   }
@@ -1564,8 +1572,8 @@ export function createZCodeTaskServiceAdapter(
       messages,
       fileChanges: [],
       configOptions: settingsToConfigOptions(snapshot.settings),
-      // agent 协议 snapshot 含有 `/compact` 等命令；task facade 投影时必须保留，
-      // 否则 replayable/legacy task restore 会把 UI 的 slashCommands 回填成空。
+      // agent åè®® snapshot å«æœ‰ `/compact` ç­‰å‘½ä»¤ï¼›task facade æŠ•å½±æ—¶å¿…é¡»ä¿ç•™ï¼Œ
+      // å¦åˆ™ replayable/legacy task restore ä¼šæŠŠ UI çš„ slashCommands å›žå¡«æˆç©ºã€‚
       slashCommands: snapshot.slashCommands ?? EMPTY_SLASH_COMMANDS,
       runtime: {
         activeTurnKind: snapshot.runtime.activeTurnKind,
@@ -1576,14 +1584,14 @@ export function createZCodeTaskServiceAdapter(
           undefined,
         pendingPermissions,
         backgroundBashJobs: backgroundTaskControls,
-        // 手机 replayable 快照需要用空数组表达“用户输入队列已清空”。
-        // desktop-continuous 主链路仍保持原投影形态，避免把 replayable 的集合恢复语义扩散过去。
+        // æ‰‹æœº replayable å¿«ç…§éœ€è¦ç”¨ç©ºæ•°ç»„è¡¨è¾¾â€œç”¨æˆ·è¾“å…¥é˜Ÿåˆ—å·²æ¸…ç©ºâ€ã€‚
+        // desktop-continuous ä¸»é“¾è·¯ä»ä¿æŒåŽŸæŠ•å½±å½¢æ€ï¼Œé¿å…æŠŠ replayable çš„é›†åˆæ¢å¤è¯­ä¹‰æ‰©æ•£è¿‡åŽ»ã€‚
         ...(pendingElicitations.length > 0 || options?.includeEmptyPendingElicitations
           ? { pendingElicitations }
           : {}),
         pendingCommands: runtimeCommands.get(taskKey(meta)) ?? [],
-        // todo 的权威数据在 agent DB；历史恢复时必须随 snapshot 映射给 UI，
-        // 不能只依赖 renderer 运行期收到过的 plan stream event。
+        // todo çš„æƒå¨æ•°æ®åœ¨ agent DBï¼›åŽ†å²æ¢å¤æ—¶å¿…é¡»éš snapshot æ˜ å°„ç»™ UIï¼Œ
+        // ä¸èƒ½åªä¾èµ– renderer è¿è¡ŒæœŸæ”¶åˆ°è¿‡çš„ plan stream eventã€‚
         plan: sessionTodosToPlanSteps(snapshot.todos),
         goalStats: sessionGoalStatsToRuntime(snapshot.goalStats),
         goalVerifications: snapshot.runtime.goalVerifications ?? null,
@@ -1596,7 +1604,7 @@ export function createZCodeTaskServiceAdapter(
   function mapServiceEvent(params: TaskTarget, event: ZCodeAgentServiceEvent): void {
     if (event.type === "snapshot") {
       void syncTaskIndexSnapshot(event.snapshot).catch((error) => {
-        logger.warn(undefined, "同步 ZCode snapshot 到 task index 失败", error);
+        logger.warn(undefined, "åŒæ­¥ ZCode snapshot åˆ° task index å¤±è´¥", error);
       });
       const snapshotEvent: ZCodeStreamEvent = {
         type: "task_snapshot_updated",
@@ -1642,8 +1650,8 @@ export function createZCodeTaskServiceAdapter(
         const payload = asRecord(event.event.payload);
         const inputId = stringValue(payload.inputId);
         if (inputId) {
-          // remote/replayable/fallback 订阅不一定由 sendPrompt 建立。
-          // turn.started 是后续 model.streaming 事件归属当前输入的协议事实，必须在 services 投影层同步记录。
+          // remote/replayable/fallback è®¢é˜…ä¸ä¸€å®šç”± sendPrompt å»ºç«‹ã€‚
+          // turn.started æ˜¯åŽç»­ model.streaming äº‹ä»¶å½’å±žå½“å‰è¾“å…¥çš„åè®®äº‹å®žï¼Œå¿…é¡»åœ¨ services æŠ•å½±å±‚åŒæ­¥è®°å½•ã€‚
           activePromptInputIds.set(taskKey(params), inputId);
         }
       }
@@ -1685,12 +1693,12 @@ export function createZCodeTaskServiceAdapter(
     if (!activePromptInputIds.has(key) && !runtimeCommands.has(key)) {
       return;
     }
-    // 终态事件源换成 v4 sessions-index 的 phase 迁移，摘要不携带 inputId，
-    // 一律用本地记录的 active input 收口（旧协议 payload.inputId 缺失时的兜底路径，语义不变）。
+    // ç»ˆæ€äº‹ä»¶æºæ¢æˆ v4 sessions-index çš„ phase è¿ç§»ï¼Œæ‘˜è¦ä¸æºå¸¦ inputIdï¼Œ
+    // ä¸€å¾‹ç”¨æœ¬åœ°è®°å½•çš„ active input æ”¶å£ï¼ˆæ—§åè®® payload.inputId ç¼ºå¤±æ—¶çš„å…œåº•è·¯å¾„ï¼Œè¯­ä¹‰ä¸å˜ï¼‰ã€‚
     const terminalInputId = activePromptInputIds.get(key);
     completeRuntimeCommandByInputId(params, terminalInputId, event.kind);
-    // turn 终态只说明 stream 收口已到，不代表 agent server 的 active lock 已释放。
-    // 这里仅收口当前 input；下一条 host command 必须等 ready 事件触发。
+    // turn ç»ˆæ€åªè¯´æ˜Ž stream æ”¶å£å·²åˆ°ï¼Œä¸ä»£è¡¨ agent server çš„ active lock å·²é‡Šæ”¾ã€‚
+    // è¿™é‡Œä»…æ”¶å£å½“å‰ inputï¼›ä¸‹ä¸€æ¡ host command å¿…é¡»ç­‰ ready äº‹ä»¶è§¦å‘ã€‚
     activePromptInputIds.delete(key);
   }
 
@@ -1714,9 +1722,9 @@ export function createZCodeTaskServiceAdapter(
     }
     const activeInputId = activePromptInputIds.get(key);
     completeRuntimeCommandByInputId(params, activeInputId, event.reason);
-    // prompt_completed/prompt_failed 由 agent server 在释放 activeAbortController 后发出。
-    // 手机 host command queue 以它作为“下一条可以发送”的 ready 边界，避免 fixed delay 重试，
-    // 也不改变桌面 continuous 的 renderer-local queue。
+    // prompt_completed/prompt_failed ç”± agent server åœ¨é‡Šæ”¾ activeAbortController åŽå‘å‡ºã€‚
+    // æ‰‹æœº host command queue ä»¥å®ƒä½œä¸ºâ€œä¸‹ä¸€æ¡å¯ä»¥å‘é€â€çš„ ready è¾¹ç•Œï¼Œé¿å… fixed delay é‡è¯•ï¼Œ
+    // ä¹Ÿä¸æ”¹å˜æ¡Œé¢ continuous çš„ renderer-local queueã€‚
     activePromptInputIds.delete(key);
     scheduleRuntimeCommandDrain(params, "session-ready");
   }
@@ -1767,8 +1775,8 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async releaseWorkspacePreparation(params): Promise<void> {
-      // 关闭 workspace UI 只会释放 RPC 使用方，不会自动终止已预热的 Agent。
-      // WSL Host 共享后 Host 会继续存活，因此必须按 workspaceKey 显式回收对应 runtime。
+      // å…³é—­ workspace UI åªä¼šé‡Šæ”¾ RPC ä½¿ç”¨æ–¹ï¼Œä¸ä¼šè‡ªåŠ¨ç»ˆæ­¢å·²é¢„çƒ­çš„ Agentã€‚
+      // WSL Host å…±äº«åŽ Host ä¼šç»§ç»­å­˜æ´»ï¼Œå› æ­¤å¿…é¡»æŒ‰ workspaceKey æ˜¾å¼å›žæ”¶å¯¹åº” runtimeã€‚
       await options.zcodeAgentService.disposeWorkspace(normalizeWorkspaceParams(params));
     },
 
@@ -1793,8 +1801,8 @@ export function createZCodeTaskServiceAdapter(
           });
           if (requestedSelection) {
             if (!sameModelSelection(snapshot.settings.model.current, requestedSelection)) {
-              // replayable 首发复用 draft session 时，draft 可能仍停在预热时的旧模型。
-              // 复用前必须同步 UI 当前模型，否则手机远控首发会显示新模型但真实请求仍用旧模型。
+              // replayable é¦–å‘å¤ç”¨ draft session æ—¶ï¼Œdraft å¯èƒ½ä»åœåœ¨é¢„çƒ­æ—¶çš„æ—§æ¨¡åž‹ã€‚
+              // å¤ç”¨å‰å¿…é¡»åŒæ­¥ UI å½“å‰æ¨¡åž‹ï¼Œå¦åˆ™æ‰‹æœºè¿œæŽ§é¦–å‘ä¼šæ˜¾ç¤ºæ–°æ¨¡åž‹ä½†çœŸå®žè¯·æ±‚ä»ç”¨æ—§æ¨¡åž‹ã€‚
               snapshot = await options.zcodeAgentService.setModel({
                 ...target,
                 sessionId: draftSessionId,
@@ -1806,8 +1814,8 @@ export function createZCodeTaskServiceAdapter(
             requestedSelection?.options?.reasoningLevel &&
             snapshot.settings.thoughtLevel.current !== requestedSelection.options.reasoningLevel
           ) {
-            // replayable 首发复用 draft session 时也必须以 UI 当前 thought_level 为准。
-            // 否则手机远控可能复用旧 draft session，导致首发请求沿用过期推理强度。
+            // replayable é¦–å‘å¤ç”¨ draft session æ—¶ä¹Ÿå¿…é¡»ä»¥ UI å½“å‰ thought_level ä¸ºå‡†ã€‚
+            // å¦åˆ™æ‰‹æœºè¿œæŽ§å¯èƒ½å¤ç”¨æ—§ draft sessionï¼Œå¯¼è‡´é¦–å‘è¯·æ±‚æ²¿ç”¨è¿‡æœŸæŽ¨ç†å¼ºåº¦ã€‚
             snapshot = await options.zcodeAgentService.setThoughtLevel({
               ...target,
               sessionId: draftSessionId,
@@ -1818,19 +1826,23 @@ export function createZCodeTaskServiceAdapter(
           if (!isSessionMissingError(error)) {
             throw error;
           }
-          // 手机端草稿 session 和桌面一样只存在 agent runtime 内存里。
-          // 远端重连/agent 重启后旧 draftSessionId 可能失效；首发消费点降级新建，避免用户卡死。
-          logger.warn(undefined, "手机 replayable draft session 已失效，降级创建新 task", {
-            draftSessionId,
-            workspaceIdentity: target.workspaceIdentity ?? null,
-            workspacePath: target.workspacePath,
-          });
+          // æ‰‹æœºç«¯è‰ç¨¿ session å’Œæ¡Œé¢ä¸€æ ·åªå­˜åœ¨ agent runtime å†…å­˜é‡Œã€‚
+          // è¿œç«¯é‡è¿ž/agent é‡å¯åŽæ—§ draftSessionId å¯èƒ½å¤±æ•ˆï¼›é¦–å‘æ¶ˆè´¹ç‚¹é™çº§æ–°å»ºï¼Œé¿å…ç”¨æˆ·å¡æ­»ã€‚
+          logger.warn(
+            undefined,
+            "æ‰‹æœº replayable draft session å·²å¤±æ•ˆï¼Œé™çº§åˆ›å»ºæ–° task",
+            {
+              draftSessionId,
+              workspaceIdentity: target.workspaceIdentity ?? null,
+              workspacePath: target.workspacePath,
+            },
+          );
         }
       }
       if (!snapshot) {
-        // v4 createSession 命令已原生（desktop
-        // v4 UI 在用），但 replayable createTask 需要 mcpServers/model/importedHistory
-        // 载荷与 snapshot 返回值（task index 同步依赖），v4 命令面均未建模；
+        // v4 createSession å‘½ä»¤å·²åŽŸç”Ÿï¼ˆdesktop
+        // v4 UI åœ¨ç”¨ï¼‰ï¼Œä½† replayable createTask éœ€è¦ mcpServers/model/importedHistory
+        // è½½è·ä¸Ž snapshot è¿”å›žå€¼ï¼ˆtask index åŒæ­¥ä¾èµ–ï¼‰ï¼Œv4 å‘½ä»¤é¢å‡æœªå»ºæ¨¡ï¼›
         if (params.v4Create === true) {
           const model = requestedSelection;
           const ack = assertV4CommandAckOk(
@@ -1872,9 +1884,9 @@ export function createZCodeTaskServiceAdapter(
             thoughtLevel: requestedSelection?.options?.reasoningLevel,
             ...(params.automationId || params.deferPersistenceUntilFirstPrompt
               ? {
-                  // 修复原因：automation / 闲时任务新建空 session 后会立即 sendText。session_input 有
-                  // session 外键，必须让 V4 admission 在首发前统一持久化 session 主记录；
-                  // 否则 create 返回成功后第一条 prompt 会稳定触发 FOREIGN KEY constraint failed。
+                  // ä¿®å¤åŽŸå› ï¼šautomation / é—²æ—¶ä»»åŠ¡æ–°å»ºç©º session åŽä¼šç«‹å³ sendTextã€‚session_input æœ‰
+                  // session å¤–é”®ï¼Œå¿…é¡»è®© V4 admission åœ¨é¦–å‘å‰ç»Ÿä¸€æŒä¹…åŒ– session ä¸»è®°å½•ï¼›
+                  // å¦åˆ™ create è¿”å›žæˆåŠŸåŽç¬¬ä¸€æ¡ prompt ä¼šç¨³å®šè§¦å‘ FOREIGN KEY constraint failedã€‚
                   persistence: "deferred" as const,
                 }
               : {}),
@@ -1883,8 +1895,8 @@ export function createZCodeTaskServiceAdapter(
                   titleGenerationEnabled: false,
                 }
               : {}),
-            // Bugfix: replayable task facade 创建 session 时同样会启动 runtime；
-            // 之前这里丢掉 mcpServers，导致手机远控路径和 desktop-continuous 的 MCP 行为不一致。
+            // Bugfix: replayable task facade åˆ›å»º session æ—¶åŒæ ·ä¼šå¯åŠ¨ runtimeï¼›
+            // ä¹‹å‰è¿™é‡Œä¸¢æŽ‰ mcpServersï¼Œå¯¼è‡´æ‰‹æœºè¿œæŽ§è·¯å¾„å’Œ desktop-continuous çš„ MCP è¡Œä¸ºä¸ä¸€è‡´ã€‚
             mcpServers,
           });
         }
@@ -1893,7 +1905,7 @@ export function createZCodeTaskServiceAdapter(
       const meta = await syncTaskIndexMeta({
         ...baseMeta,
         ...(params.automationId ? { cronAutomationId: params.automationId } : {}),
-        // 闲时派发在创建时即盖章持久归属；月亮图标与后续系统分组归属都只看该标记。
+        // é—²æ—¶æ´¾å‘åœ¨åˆ›å»ºæ—¶å³ç›–ç« æŒä¹…å½’å±žï¼›æœˆäº®å›¾æ ‡ä¸ŽåŽç»­ç³»ç»Ÿåˆ†ç»„å½’å±žéƒ½åªçœ‹è¯¥æ ‡è®°ã€‚
         ...(params.offPeakTaskId ? { offPeakTaskId: params.offPeakTaskId } : {}),
       });
       await taskIndexRepo.initializeGroupedTaskAtTop({
@@ -1907,10 +1919,10 @@ export function createZCodeTaskServiceAdapter(
         workspaceIdentity: meta.workspaceIdentity,
       });
       emitWorkspaceConfig(target, snapshot.settings);
-      // 手机端通过 shared-host 创建 task 时，桌面 renderer 没有本地乐观插入。
-      // create 事件必须保留 task_created 语义，否则 UI 会按普通 meta 事件只重排已存在项，远控首页就拿不到新任务。
+      // æ‰‹æœºç«¯é€šè¿‡ shared-host åˆ›å»º task æ—¶ï¼Œæ¡Œé¢ renderer æ²¡æœ‰æœ¬åœ°ä¹è§‚æ’å…¥ã€‚
+      // create äº‹ä»¶å¿…é¡»ä¿ç•™ task_created è¯­ä¹‰ï¼Œå¦åˆ™ UI ä¼šæŒ‰æ™®é€š meta äº‹ä»¶åªé‡æŽ’å·²å­˜åœ¨é¡¹ï¼Œè¿œæŽ§é¦–é¡µå°±æ‹¿ä¸åˆ°æ–°ä»»åŠ¡ã€‚
       emitWorkspaceTaskListChanged(target, meta, "task_created");
-      // task 创建结果需要携带 agent 协议快照里的命令列表；否则 replayable 首屏会覆盖为空。
+      // task åˆ›å»ºç»“æžœéœ€è¦æºå¸¦ agent åè®®å¿«ç…§é‡Œçš„å‘½ä»¤åˆ—è¡¨ï¼›å¦åˆ™ replayable é¦–å±ä¼šè¦†ç›–ä¸ºç©ºã€‚
       return {
         ...meta,
         initialSlashCommands: snapshot.slashCommands ?? EMPTY_SLASH_COMMANDS,
@@ -1968,14 +1980,14 @@ export function createZCodeTaskServiceAdapter(
         type: "send_prompt",
         content: params.content,
         attachments: params.attachments,
-        // manual run / 手机 replayable 的 prompt 可能先进入 host command queue；
-        // 若这里丢 automationId，drain 时会按普通用户输入发送，CronCreate 会重新暴露。
+        // manual run / æ‰‹æœº replayable çš„ prompt å¯èƒ½å…ˆè¿›å…¥ host command queueï¼›
+        // è‹¥è¿™é‡Œä¸¢ automationIdï¼Œdrain æ—¶ä¼šæŒ‰æ™®é€šç”¨æˆ·è¾“å…¥å‘é€ï¼ŒCronCreate ä¼šé‡æ–°æš´éœ²ã€‚
         automationId: params.automationId,
       };
       const key = taskKey(params);
       runtimeCommands.set(key, [...(runtimeCommands.get(key) ?? []), command]);
-      // 手机 replayable host command 被 accepted 后，前端本地 drain 会主动跳过 hostCommand。
-      // 因此 host 需要在当前 task 已空闲时自行触发消费；桌面 continuous 不调用该入口，不会受影响。
+      // æ‰‹æœº replayable host command è¢« accepted åŽï¼Œå‰ç«¯æœ¬åœ° drain ä¼šä¸»åŠ¨è·³è¿‡ hostCommandã€‚
+      // å› æ­¤ host éœ€è¦åœ¨å½“å‰ task å·²ç©ºé—²æ—¶è‡ªè¡Œè§¦å‘æ¶ˆè´¹ï¼›æ¡Œé¢ continuous ä¸è°ƒç”¨è¯¥å…¥å£ï¼Œä¸ä¼šå—å½±å“ã€‚
       scheduleRuntimeCommandDrain(params, "enqueue");
       return { accepted: true, command };
     },
@@ -2009,7 +2021,7 @@ export function createZCodeTaskServiceAdapter(
       const commands = runtimeCommands.get(key) ?? [];
       const command = commands.find((candidate) => candidate.commandId === params.commandId);
       if (!command) {
-        logger.info(undefined, "ZCode task command 取消时已不存在", {
+        logger.info(undefined, "ZCode task command å–æ¶ˆæ—¶å·²ä¸å­˜åœ¨", {
           commandId: params.commandId,
           taskId: params.taskId,
           workspaceIdentity: params.workspaceIdentity ?? null,
@@ -2023,7 +2035,7 @@ export function createZCodeTaskServiceAdapter(
         };
       }
       if (command.status === "running") {
-        logger.info(command.traceId, "ZCode task command 已开始运行，跳过取消", {
+        logger.info(command.traceId, "ZCode task command å·²å¼€å§‹è¿è¡Œï¼Œè·³è¿‡å–æ¶ˆ", {
           commandId: command.commandId,
           taskId: params.taskId,
           workspaceIdentity: params.workspaceIdentity ?? null,
@@ -2037,14 +2049,14 @@ export function createZCodeTaskServiceAdapter(
           status: command.status,
         };
       }
-      // 手机 replayable 队列的事实源在 host runtime command queue。
-      // 删除按钮不能只清 renderer 本地 store，否则下一次 snapshot 会把已 accepted 的命令恢复回来。
+      // æ‰‹æœº replayable é˜Ÿåˆ—çš„äº‹å®žæºåœ¨ host runtime command queueã€‚
+      // åˆ é™¤æŒ‰é’®ä¸èƒ½åªæ¸… renderer æœ¬åœ° storeï¼Œå¦åˆ™ä¸‹ä¸€æ¬¡ snapshot ä¼šæŠŠå·² accepted çš„å‘½ä»¤æ¢å¤å›žæ¥ã€‚
       setRuntimeCommands(
         params,
         commands.filter((item) => item.commandId !== command.commandId),
       );
       emitRuntimeCommandSnapshotUpdated(params, command.traceId);
-      logger.info(command.traceId, "ZCode task command 已取消", {
+      logger.info(command.traceId, "ZCode task command å·²å–æ¶ˆ", {
         commandId: command.commandId,
         status: command.status,
         taskId: params.taskId,
@@ -2068,14 +2080,14 @@ export function createZCodeTaskServiceAdapter(
             workspaceIdentity: params.workspaceIdentity,
           }
         : getTaskTarget(params.taskId);
-      logger.info(params.runId, "ZCode task facade stopGeneration 开始", {
+      logger.info(params.runId, "ZCode task facade stopGeneration å¼€å§‹", {
         hasRunId: Boolean(params.runId),
         taskId: params.taskId,
         workspaceIdentity: target.workspaceIdentity ?? null,
         workspaceKey: resolveWorkspaceKey(target),
         workspacePath: target.workspacePath,
       });
-      // session/stop → v4 stop 命令（goal-pause barrier 语义由 CLI 原生 handler 承接）。
+      // session/stop â†’ v4 stop å‘½ä»¤ï¼ˆgoal-pause barrier è¯­ä¹‰ç”± CLI åŽŸç”Ÿ handler æ‰¿æŽ¥ï¼‰ã€‚
       const ack = await options.zcodeAgentService.sendConversationCommandV4({
         workspacePath: target.workspacePath,
         workspaceIdentity: target.workspaceIdentity,
@@ -2096,10 +2108,10 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async compactSession(params) {
-      // v4 compact 是 CAS 命令（必带 v4 conversation revision
-      // 的 baseRevision），而本 facade 的 expectedRevision 是旧协议 stateRevision——
-      // 两套计数器不可互换；replayable 侧拿到 v4 revision 前强行迁移会造成假 stale。
-      // 且 v4 compact 无 instructions/runtimeModel 载荷。
+      // v4 compact æ˜¯ CAS å‘½ä»¤ï¼ˆå¿…å¸¦ v4 conversation revision
+      // çš„ baseRevisionï¼‰ï¼Œè€Œæœ¬ facade çš„ expectedRevision æ˜¯æ—§åè®® stateRevisionâ€”â€”
+      // ä¸¤å¥—è®¡æ•°å™¨ä¸å¯äº’æ¢ï¼›replayable ä¾§æ‹¿åˆ° v4 revision å‰å¼ºè¡Œè¿ç§»ä¼šé€ æˆå‡ staleã€‚
+      // ä¸” v4 compact æ—  instructions/runtimeModel è½½è·ã€‚
       const target = params.workspacePath
         ? {
             taskId: params.taskId,
@@ -2124,7 +2136,7 @@ export function createZCodeTaskServiceAdapter(
           return result;
         }
         const meta = await syncTaskIndexSnapshot(result.snapshot);
-        // compact 收敛是状态同步，不涉及归属；缺省 task_meta_changed 会触发全局 membership 重拉。
+        // compact æ”¶æ•›æ˜¯çŠ¶æ€åŒæ­¥ï¼Œä¸æ¶‰åŠå½’å±žï¼›ç¼ºçœ task_meta_changed ä¼šè§¦å‘å…¨å±€ membership é‡æ‹‰ã€‚
         emitWorkspaceTaskListChanged(target, meta, "task_status_changed");
         activePromptInputIds.delete(taskKey(target));
         return result;
@@ -2135,10 +2147,10 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async goalSession(params) {
-      // v4 sendGoalCommand 只覆盖 set 语义（text 原文），
-      // 本 facade 的 action=resume/clear/replace/status 依赖旧 op 的结构化 action 面
-      // （v4 侧 resumeGoal 是 CAS 命令，revision 计数器问题同 compactSession）。
-      // 过渡归宿 = replayable v4 读路径收口，与 compactSession 同批。
+      // v4 sendGoalCommand åªè¦†ç›– set è¯­ä¹‰ï¼ˆtext åŽŸæ–‡ï¼‰ï¼Œ
+      // æœ¬ facade çš„ action=resume/clear/replace/status ä¾èµ–æ—§ op çš„ç»“æž„åŒ– action é¢
+      // ï¼ˆv4 ä¾§ resumeGoal æ˜¯ CAS å‘½ä»¤ï¼Œrevision è®¡æ•°å™¨é—®é¢˜åŒ compactSessionï¼‰ã€‚
+      // è¿‡æ¸¡å½’å®¿ = replayable v4 è¯»è·¯å¾„æ”¶å£ï¼Œä¸Ž compactSession åŒæ‰¹ã€‚
       const startedAt = Date.now();
       const target = params.workspacePath
         ? {
@@ -2151,7 +2163,7 @@ export function createZCodeTaskServiceAdapter(
       const mayStartContinuation =
         params.action === "set" || params.action === "replace" || params.action === "resume";
       if (mayStartContinuation) {
-        // goal resume 也可能启动新一轮模型输出，不能继承上一轮 live-only 工具。
+        // goal resume ä¹Ÿå¯èƒ½å¯åŠ¨æ–°ä¸€è½®æ¨¡åž‹è¾“å‡ºï¼Œä¸èƒ½ç»§æ‰¿ä¸Šä¸€è½® live-only å·¥å…·ã€‚
         clearLiveToolProjection(target);
         clearStreamingToolInputCache(target);
       }
@@ -2175,7 +2187,7 @@ export function createZCodeTaskServiceAdapter(
         objective: params.objective,
         expectedRevision: params.expectedRevision,
       });
-      logger.info(params.inputId, "[zcode-task-service] goalSession agent 返回", {
+      logger.info(params.inputId, "[zcode-task-service] goalSession agent è¿”å›ž", {
         action: params.action,
         durationMs: Date.now() - startedAt,
         responseLength: result.response?.length ?? 0,
@@ -2187,9 +2199,9 @@ export function createZCodeTaskServiceAdapter(
       });
       const syncStartedAt = Date.now();
       const meta = await syncTaskIndexSnapshot(result.snapshot);
-      // goal 动作后的快照收敛同为状态同步，不涉及归属，避免全局 membership 重拉。
+      // goal åŠ¨ä½œåŽçš„å¿«ç…§æ”¶æ•›åŒä¸ºçŠ¶æ€åŒæ­¥ï¼Œä¸æ¶‰åŠå½’å±žï¼Œé¿å…å…¨å±€ membership é‡æ‹‰ã€‚
       emitWorkspaceTaskListChanged(target, meta, "task_status_changed");
-      logger.info(params.inputId, "[zcode-task-service] goalSession task index 同步完成", {
+      logger.info(params.inputId, "[zcode-task-service] goalSession task index åŒæ­¥å®Œæˆ", {
         action: params.action,
         durationMs: Date.now() - startedAt,
         startedTurn: result.startedTurn,
@@ -2213,10 +2225,10 @@ export function createZCodeTaskServiceAdapter(
             workspaceIdentity: params.workspaceIdentity,
           }
         : getTaskTarget(params.taskId);
-      // permission 回执收敛 v4 resolveInteraction。
-      // interactionId ≡ 业务 requestId（CLI interaction-broker 同源注册）；optionId 由
-      // CLI 侧 buildProtocolPermissionOptions 精确回映 response（allow_project 的
-      // permissionUpdates 持久化规则不丢，见 interaction-broker v4AnswerToPermissionResponse）。
+      // permission å›žæ‰§æ”¶æ•› v4 resolveInteractionã€‚
+      // interactionId â‰¡ ä¸šåŠ¡ requestIdï¼ˆCLI interaction-broker åŒæºæ³¨å†Œï¼‰ï¼›optionId ç”±
+      // CLI ä¾§ buildProtocolPermissionOptions ç²¾ç¡®å›žæ˜  responseï¼ˆallow_project çš„
+      // permissionUpdates æŒä¹…åŒ–è§„åˆ™ä¸ä¸¢ï¼Œè§ interaction-broker v4AnswerToPermissionResponseï¼‰ã€‚
       const ack = await options.zcodeAgentService.sendConversationCommandV4({
         workspacePath: target.workspacePath,
         workspaceIdentity: target.workspaceIdentity,
@@ -2241,9 +2253,9 @@ export function createZCodeTaskServiceAdapter(
             workspaceIdentity: params.workspaceIdentity,
           }
         : getTaskTarget(params.taskId);
-      // AskUserQuestion/plan-approval 回执收敛 v4 resolveInteraction。
-      // answer.action/content 是 additive 扩展（多题答案/注解无损承载，CLI 侧
-      // interaction-broker 优先按 action 精确映射，缺省回落 optionId/freeText 兼容路径）。
+      // AskUserQuestion/plan-approval å›žæ‰§æ”¶æ•› v4 resolveInteractionã€‚
+      // answer.action/content æ˜¯ additive æ‰©å±•ï¼ˆå¤šé¢˜ç­”æ¡ˆ/æ³¨è§£æ— æŸæ‰¿è½½ï¼ŒCLI ä¾§
+      // interaction-broker ä¼˜å…ˆæŒ‰ action ç²¾ç¡®æ˜ å°„ï¼Œç¼ºçœå›žè½ optionId/freeText å…¼å®¹è·¯å¾„ï¼‰ã€‚
       const ack = await options.zcodeAgentService.sendConversationCommandV4({
         workspacePath: target.workspacePath,
         workspaceIdentity: target.workspaceIdentity,
@@ -2261,9 +2273,9 @@ export function createZCodeTaskServiceAdapter(
       });
       assertV4CommandAckOk("resolveInteraction", ack, `elicitation ${params.requestId}`);
       if (params.clientMode === "web-remote-replayable") {
-        // 语义保真（原 agentService.respondUserInput 的 web-remote-replayable 分支）：
-        // 手机远控应答后，桌面/其它 observer 需要显式响应事件清理同一 requestId 的弹窗；
-        // v4 命令路径不再经过旧 respondUserInput，这里由 adapter 本地补投同一事件。
+        // è¯­ä¹‰ä¿çœŸï¼ˆåŽŸ agentService.respondUserInput çš„ web-remote-replayable åˆ†æ”¯ï¼‰ï¼š
+        // æ‰‹æœºè¿œæŽ§åº”ç­”åŽï¼Œæ¡Œé¢/å…¶å®ƒ observer éœ€è¦æ˜¾å¼å“åº”äº‹ä»¶æ¸…ç†åŒä¸€ requestId çš„å¼¹çª—ï¼›
+        // v4 å‘½ä»¤è·¯å¾„ä¸å†ç»è¿‡æ—§ respondUserInputï¼Œè¿™é‡Œç”± adapter æœ¬åœ°è¡¥æŠ•åŒä¸€äº‹ä»¶ã€‚
         emitTaskEvent(
           target,
           userInputResponseToElicitationStreamEvent(params.taskId, params.requestId, {
@@ -2276,7 +2288,7 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async closeTask(params): Promise<void> {
-      // 此兼容入口仍通过 closeSession 关闭会话；尚无只关闭 runtime、保留会话的独立操作。
+      // æ­¤å…¼å®¹å…¥å£ä»é€šè¿‡ closeSession å…³é—­ä¼šè¯ï¼›å°šæ— åªå…³é—­ runtimeã€ä¿ç•™ä¼šè¯çš„ç‹¬ç«‹æ“ä½œã€‚
       const target = getTaskTarget(params.taskId);
       await options.zcodeAgentService.closeSession({
         workspacePath: target.workspacePath,
@@ -2287,14 +2299,14 @@ export function createZCodeTaskServiceAdapter(
       await updateIndexedTaskState(target, { deleted: true });
       clearLiveToolProjection(target);
       clearStreamingToolInputCache(target);
-      // 删除的列表内容收敛由 sessions-index session.removed 驱动；此处广播沿用旧语义兜底。
+      // åˆ é™¤çš„åˆ—è¡¨å†…å®¹æ”¶æ•›ç”± sessions-index session.removed é©±åŠ¨ï¼›æ­¤å¤„å¹¿æ’­æ²¿ç”¨æ—§è¯­ä¹‰å…œåº•ã€‚
       emitWorkspaceTaskListChanged(target, undefined, "task_meta_changed");
     },
 
     async resumeTask(params): Promise<ZCodeTaskMeta> {
-      // v4 侧 resume 已走 subscribe 冷恢复钩子
-      // （CLI cold-resume），但 replayable resumeTask 还承担 model/thoughtLevel 回填与
-      // snapshot→task index 正文索引回源，旧 resumeSession op 保留到 v4 生命周期收口。
+      // v4 ä¾§ resume å·²èµ° subscribe å†·æ¢å¤é’©å­
+      // ï¼ˆCLI cold-resumeï¼‰ï¼Œä½† replayable resumeTask è¿˜æ‰¿æ‹… model/thoughtLevel å›žå¡«ä¸Ž
+      // snapshotâ†’task index æ­£æ–‡ç´¢å¼•å›žæºï¼Œæ—§ resumeSession op ä¿ç•™åˆ° v4 ç”Ÿå‘½å‘¨æœŸæ”¶å£ã€‚
       const explicitModel = params.model?.trim();
       const explicitThoughtLevel = params.thoughtLevel?.trim();
       const indexHints =
@@ -2318,7 +2330,7 @@ export function createZCodeTaskServiceAdapter(
           ? await syncTaskIndexMeta({
               ...snapshotMeta,
               ...(params.automationId ? { cronAutomationId: params.automationId } : {}),
-              // 续跑时补写闲时归属标记。
+              // ç»­è·‘æ—¶è¡¥å†™é—²æ—¶å½’å±žæ ‡è®°ã€‚
               ...(params.offPeakTaskId ? { offPeakTaskId: params.offPeakTaskId } : {}),
             })
           : snapshotMeta;
@@ -2369,9 +2381,9 @@ export function createZCodeTaskServiceAdapter(
       });
     },
 
-    // listTaskList 的消费面是全文搜索（searchable_text/snippets）与
-    // remoteTimelineTaskStore 补充链路；侧栏 5 视图 + remote shard 的无搜索行集合
-    // 走上方三个分区读取。workspace 行在客户端用各 endpoint 的 task 行 + session detail 构建。
+    // listTaskList çš„æ¶ˆè´¹é¢æ˜¯å…¨æ–‡æœç´¢ï¼ˆsearchable_text/snippetsï¼‰ä¸Ž
+    // remoteTimelineTaskStore è¡¥å……é“¾è·¯ï¼›ä¾§æ  5 è§†å›¾ + remote shard çš„æ— æœç´¢è¡Œé›†åˆ
+    // èµ°ä¸Šæ–¹ä¸‰ä¸ªåˆ†åŒºè¯»å–ã€‚workspace è¡Œåœ¨å®¢æˆ·ç«¯ç”¨å„ endpoint çš„ task è¡Œ + session detail æž„å»ºã€‚
     async listTaskList(params: ZCodeTaskListQuery): Promise<ZCodeTaskListResult> {
       const result = await taskIndexRepo.queryTaskList({
         ...params,
@@ -2391,7 +2403,7 @@ export function createZCodeTaskServiceAdapter(
     async renameTaskGroup(params) {
       const group = await taskIndexRepo.renameTaskGroup(params);
       for (const scope of params.workspaceScopes ?? []) {
-        // grouped 结构变更无单任务 meta，沿用 task_meta_changed 驱动 grouped 视图重拉。
+        // grouped ç»“æž„å˜æ›´æ— å•ä»»åŠ¡ metaï¼Œæ²¿ç”¨ task_meta_changed é©±åŠ¨ grouped è§†å›¾é‡æ‹‰ã€‚
         emitWorkspaceTaskListChanged(scope, undefined, "task_meta_changed");
       }
       return group;
@@ -2412,21 +2424,36 @@ export function createZCodeTaskServiceAdapter(
       }
     },
 
-    // grouped 视图任务内容由 sessions-index 提供；provider 过滤与 meta 翻译
-    // 随客户端 task 行 join 完成，此处仅保留结构读取。
+    // grouped è§†å›¾ä»»åŠ¡å†…å®¹ç”± sessions-index æä¾›ï¼›provider è¿‡æ»¤ä¸Ž meta ç¿»è¯‘
+    // éšå®¢æˆ·ç«¯ task è¡Œ join å®Œæˆï¼Œæ­¤å¤„ä»…ä¿ç•™ç»“æž„è¯»å–ã€‚
 
     async listGroupedTaskViewStructure(params) {
-      // grouped 原始结构（不 join tasks 表）；任务内容由 sessions-index 提供，客户端 join。
-      // 与 listGroupedTaskView 同口径保留 auto-archive 触发（进入 grouped 视图时清理超期任务）。
-      await runWorkspaceTaskAutoArchive(params.workspaceScopes);
-      return taskIndexRepo.queryGroupedTaskViewStructure(params);
+      // grouped åŽŸå§‹ç»“æž„ï¼ˆä¸ join tasks è¡¨ï¼‰ï¼›ä»»åŠ¡å†…å®¹ç”± task-index/session åœ¨ renderer ä¾§ joinã€‚
+      // å†·å¯åŠ¨ sidebar å¿…é¡»çœ‹åˆ°æ‰€æœ‰ directoryï¼Œå› æ­¤æ”¯æŒ includeAllWorkspacesï¼Œä¸ä¾èµ–å·²æ‰“å¼€çš„ tabs.
+      if (!params.includeAllWorkspaces) {
+        await runWorkspaceTaskAutoArchive(params.workspaceScopes);
+      }
+      const result = await taskIndexRepo.queryGroupedTaskViewStructure(params);
+      if (params.includeAllWorkspaces) {
+        // Global sidebar must receive task rows from the same global query boundary; cold start cannot depend on a workspace-scoped renderer lookup.
+        const taskList = await taskIndexRepo.queryTaskList({
+          kind: "active",
+          workspaceScopes: params.workspaceScopes,
+          includeAllWorkspaces: true,
+          sortBy: "updated",
+          limit: undefined,
+          provider: GLM_PROVIDER,
+        });
+        return { ...result, tasks: taskList.items };
+      }
+      return result;
     },
 
     async applyGroupedTaskViewOrder(params) {
       const result = await taskIndexRepo.applyGroupedTaskViewOrder({
         ...params,
-        // grouped 保存排序后的回包也必须继承列表查询的 glm provider 边界，
-        // 否则历史外部 provider 的 task 会通过未过滤的二次查询短暂回到 UI。
+        // grouped ä¿å­˜æŽ’åºåŽçš„å›žåŒ…ä¹Ÿå¿…é¡»ç»§æ‰¿åˆ—è¡¨æŸ¥è¯¢çš„ glm provider è¾¹ç•Œï¼Œ
+        // å¦åˆ™åŽ†å²å¤–éƒ¨ provider çš„ task ä¼šé€šè¿‡æœªè¿‡æ»¤çš„äºŒæ¬¡æŸ¥è¯¢çŸ­æš‚å›žåˆ° UIã€‚
         provider: GLM_PROVIDER,
       });
       for (const scope of params.workspaceScopes) {
@@ -2455,14 +2482,14 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async archiveStaleTasks(params): Promise<ZCodeTaskMeta[]> {
-      // stale archive API 和设置页自动归档保持一致，清理全部历史 provider。
+      // stale archive API å’Œè®¾ç½®é¡µè‡ªåŠ¨å½’æ¡£ä¿æŒä¸€è‡´ï¼Œæ¸…ç†å…¨éƒ¨åŽ†å² providerã€‚
       const archivedTasks = await taskIndexRepo.archiveStaleTasks({
         ...params,
       });
       for (const task of archivedTasks) {
         setOverlay(task, { archived: true });
         rememberIndexedTaskMeta(task);
-        // 同 runWorkspaceTaskAutoArchive：沿用 task_meta_changed 走 membership 重拉收敛。
+        // åŒ runWorkspaceTaskAutoArchiveï¼šæ²¿ç”¨ task_meta_changed èµ° membership é‡æ‹‰æ”¶æ•›ã€‚
         emitWorkspaceTaskListChanged(task, task, "task_meta_changed");
       }
       return archivedTasks;
@@ -2484,7 +2511,7 @@ export function createZCodeTaskServiceAdapter(
           patch: { archived: true },
         });
       }
-      // 批量归档无逐任务 meta，沿用 task_meta_changed 走 membership 重拉收敛。
+      // æ‰¹é‡å½’æ¡£æ— é€ä»»åŠ¡ metaï¼Œæ²¿ç”¨ task_meta_changed èµ° membership é‡æ‹‰æ”¶æ•›ã€‚
       emitWorkspaceTaskListChanged(params, undefined, "task_meta_changed");
       return taskIndexRepo.listTaskMetas({
         workspacePath: params.workspacePath,
@@ -2512,9 +2539,9 @@ export function createZCodeTaskServiceAdapter(
         taskId: params.taskId,
         workspacePath: params.workspacePath,
         workspaceIdentity: params.workspaceIdentity,
-        // 手机 replayable 首屏 snapshot 会先于后续 resumeTask 读取。
-        // 这里必须把 task meta 解析出的历史模型和 thoughtLevel 传进 session/resume，
-        // 避免冷恢复用 workspace/draft 默认配置污染 context window 与思考强度。
+        // æ‰‹æœº replayable é¦–å± snapshot ä¼šå…ˆäºŽåŽç»­ resumeTask è¯»å–ã€‚
+        // è¿™é‡Œå¿…é¡»æŠŠ task meta è§£æžå‡ºçš„åŽ†å²æ¨¡åž‹å’Œ thoughtLevel ä¼ è¿› session/resumeï¼Œ
+        // é¿å…å†·æ¢å¤ç”¨ workspace/draft é»˜è®¤é…ç½®æ±¡æŸ“ context window ä¸Žæ€è€ƒå¼ºåº¦ã€‚
         model,
         thoughtLevel,
       });
@@ -2527,11 +2554,11 @@ export function createZCodeTaskServiceAdapter(
         params.messageLimit,
       );
       const projectionDurationMs = Date.now() - projectionStartedAt;
-      // session owner 的快照刷新索引投影；syncTaskMeta 继续保留用户手动标题。
+      // session owner çš„å¿«ç…§åˆ·æ–°ç´¢å¼•æŠ•å½±ï¼›syncTaskMeta ç»§ç»­ä¿ç•™ç”¨æˆ·æ‰‹åŠ¨æ ‡é¢˜ã€‚
       const indexStartedAt = Date.now();
       const indexedMeta = await syncTaskIndexMeta(zcodeSnapshot.meta);
       const indexDurationMs = Date.now() - indexStartedAt;
-      logger.info(undefined, "[zcode-task-service] 历史快照读取完成", {
+      logger.info(undefined, "[zcode-task-service] åŽ†å²å¿«ç…§è¯»å–å®Œæˆ", {
         clientMode: params.clientMode ?? "unknown",
         durationMs: Date.now() - startedAt,
         indexDurationMs,
@@ -2551,7 +2578,7 @@ export function createZCodeTaskServiceAdapter(
       const startedAt = Date.now();
       const snapshot = await service.getTaskSnapshot(params);
       if (!snapshot) {
-        logger.info(undefined, "[zcode-task-service] 历史快照 ETag 读取为空", {
+        logger.info(undefined, "[zcode-task-service] åŽ†å²å¿«ç…§ ETag è¯»å–ä¸ºç©º", {
           clientMode: params.clientMode ?? "unknown",
           durationMs: Date.now() - startedAt,
           messageLimit: params.messageLimit ?? null,
@@ -2565,7 +2592,7 @@ export function createZCodeTaskServiceAdapter(
       const etag = createHash("sha256").update(JSON.stringify(snapshot)).digest("hex");
       const etagDurationMs = Date.now() - etagStartedAt;
       if (params.ifNoneMatch && params.ifNoneMatch === etag) {
-        logger.info(undefined, "[zcode-task-service] 历史快照 ETag 命中缓存", {
+        logger.info(undefined, "[zcode-task-service] åŽ†å²å¿«ç…§ ETag å‘½ä¸­ç¼“å­˜", {
           clientMode: params.clientMode ?? "unknown",
           durationMs: Date.now() - startedAt,
           etagDurationMs,
@@ -2577,7 +2604,7 @@ export function createZCodeTaskServiceAdapter(
         });
         return { snapshot: null, etag, notModified: true };
       }
-      logger.info(undefined, "[zcode-task-service] 历史快照 ETag 生成完成", {
+      logger.info(undefined, "[zcode-task-service] åŽ†å²å¿«ç…§ ETag ç”Ÿæˆå®Œæˆ", {
         clientMode: params.clientMode ?? "unknown",
         durationMs: Date.now() - startedAt,
         etagDurationMs,
@@ -2641,8 +2668,8 @@ export function createZCodeTaskServiceAdapter(
       modifiedSince?: number;
       limit?: number;
     }): Promise<ZCodeImportableSessionCandidate[]> {
-      // legacy ACP 下线后 scanImportableClaudeSessions 被留成空桩，迁移向导扫不到 ~/.claude/projects。
-      // workspaceIdentity 仅影响导入落盘目录，扫描仍按 jsonl 内 cwd 与可选 workspacePath 过滤。
+      // legacy ACP ä¸‹çº¿åŽ scanImportableClaudeSessions è¢«ç•™æˆç©ºæ¡©ï¼Œè¿ç§»å‘å¯¼æ‰«ä¸åˆ° ~/.claude/projectsã€‚
+      // workspaceIdentity ä»…å½±å“å¯¼å…¥è½ç›˜ç›®å½•ï¼Œæ‰«æä»æŒ‰ jsonl å†… cwd ä¸Žå¯é€‰ workspacePath è¿‡æ»¤ã€‚
       void params.workspaceIdentity;
       return claudeNativeSessionImportRepo.scanImportableSessions({
         workspacePath: params.workspacePath,
@@ -2684,8 +2711,8 @@ export function createZCodeTaskServiceAdapter(
             },
           });
           const meta = await syncTaskIndexSnapshot(snapshot);
-          // 导入后的任务必须是真实 ZCode session，setModel/sendPrompt 才能继续命中 runtime。
-          // 同时保留 migrationSource，避免任务列表把 Claude Code 迁移历史当成本地新会话。
+          // å¯¼å…¥åŽçš„ä»»åŠ¡å¿…é¡»æ˜¯çœŸå®ž ZCode sessionï¼ŒsetModel/sendPrompt æ‰èƒ½ç»§ç»­å‘½ä¸­ runtimeã€‚
+          // åŒæ—¶ä¿ç•™ migrationSourceï¼Œé¿å…ä»»åŠ¡åˆ—è¡¨æŠŠ Claude Code è¿ç§»åŽ†å²å½“æˆæœ¬åœ°æ–°ä¼šè¯ã€‚
           return syncTaskIndexMeta({ ...meta, migrationSource: "claudeCode" });
         },
         onTaskImported: (meta) => {
@@ -2697,7 +2724,7 @@ export function createZCodeTaskServiceAdapter(
               taskId: meta.taskId,
             },
             meta,
-            // 导入沿用 task_meta_changed 旧语义。
+            // å¯¼å…¥æ²¿ç”¨ task_meta_changed æ—§è¯­ä¹‰ã€‚
             "task_meta_changed",
           );
         },
@@ -2705,9 +2732,9 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async setMode(params): Promise<void> {
-      // session/setMode → v4 switchCollaborationMode（CAS，revision 收敛见
-      // sendHostCasCommandV4）。v4 handler 不发旧 state.updated，观察端一致性与桌面
-      // v4 工具条切换同批（读路径 v4 store 收口）；发起端由下方 resumeSnapshot 保真。
+      // session/setMode â†’ v4 switchCollaborationModeï¼ˆCASï¼Œrevision æ”¶æ•›è§
+      // sendHostCasCommandV4ï¼‰ã€‚v4 handler ä¸å‘æ—§ state.updatedï¼Œè§‚å¯Ÿç«¯ä¸€è‡´æ€§ä¸Žæ¡Œé¢
+      // v4 å·¥å…·æ¡åˆ‡æ¢åŒæ‰¹ï¼ˆè¯»è·¯å¾„ v4 store æ”¶å£ï¼‰ï¼›å‘èµ·ç«¯ç”±ä¸‹æ–¹ resumeSnapshot ä¿çœŸã€‚
       const target = getTaskTarget(params.taskId);
       await switchCollaborationModeViaProtocol(target, toZCodeMode(params.mode) ?? "build");
       const snapshot = await resumeSnapshot(target);
@@ -2724,18 +2751,18 @@ export function createZCodeTaskServiceAdapter(
         });
       }
       if (params.configId === THOUGHT_LEVEL_CONFIG_ID) {
-        // session/setThoughtLevel → v4 switchModelConfig（v4 无独立思考深度命令，
-        // thought 字段承载；provider/model 取当前会话选型，与桌面 v4 工具条同一命令面）。
-        // 同 provider 同 model 直切，不涉及 runtimeModel（provider 凭据）解析——这正是
-        // setModel 尚不能迁移的原因（见下方 setModel 标注）。
+        // session/setThoughtLevel â†’ v4 switchModelConfigï¼ˆv4 æ— ç‹¬ç«‹æ€è€ƒæ·±åº¦å‘½ä»¤ï¼Œ
+        // thought å­—æ®µæ‰¿è½½ï¼›provider/model å–å½“å‰ä¼šè¯é€‰åž‹ï¼Œä¸Žæ¡Œé¢ v4 å·¥å…·æ¡åŒä¸€å‘½ä»¤é¢ï¼‰ã€‚
+        // åŒ provider åŒ model ç›´åˆ‡ï¼Œä¸æ¶‰åŠ runtimeModelï¼ˆprovider å‡­æ®ï¼‰è§£æžâ€”â€”è¿™æ­£æ˜¯
+        // setModel å°šä¸èƒ½è¿ç§»çš„åŽŸå› ï¼ˆè§ä¸‹æ–¹ setModel æ ‡æ³¨ï¼‰ã€‚
         const current = await options.zcodeAgentService.readSession({
           workspacePath: target.workspacePath,
           workspaceIdentity: target.workspaceIdentity,
           sessionId: params.taskId,
         });
         const model = current.settings.model.current;
-        // 未绑定会话可以查看，但单独切档位不能猜测 Provider/Model。
-        if (!model) throw new Error("请先选择模型，再设置思考档位");
+        // æœªç»‘å®šä¼šè¯å¯ä»¥æŸ¥çœ‹ï¼Œä½†å•ç‹¬åˆ‡æ¡£ä½ä¸èƒ½çŒœæµ‹ Provider/Modelã€‚
+        if (!model) throw new Error("è¯·å…ˆé€‰æ‹©æ¨¡åž‹ï¼Œå†è®¾ç½®æ€è€ƒæ¡£ä½");
         await sendConfigCasCommandV4(
           target,
           "switchModelConfig",
@@ -2758,16 +2785,16 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async setModel(params): Promise<ZCodeConfigOption[]> {
-      // replayable facade 仍依赖 legacy op 返回的 Session
-      // Snapshot；模型执行事实已经收敛到目标 Worker Registry，Host 只发送 Selection。
-      // 过渡归宿 = task facade 原生消费 V4 config 投影与 revision。
+      // replayable facade ä»ä¾èµ– legacy op è¿”å›žçš„ Session
+      // Snapshotï¼›æ¨¡åž‹æ‰§è¡Œäº‹å®žå·²ç»æ”¶æ•›åˆ°ç›®æ ‡ Worker Registryï¼ŒHost åªå‘é€ Selectionã€‚
+      // è¿‡æ¸¡å½’å®¿ = task facade åŽŸç”Ÿæ¶ˆè´¹ V4 config æŠ•å½±ä¸Ž revisionã€‚
       const target = getTaskTarget(params.taskId);
       await options.zcodeAgentService.setModel({
         workspacePath: target.workspacePath,
         workspaceIdentity: target.workspaceIdentity,
         sessionId: params.taskId,
-        // replayable/legacy facade 的 modelId 可能只是 UI 运行态模型名（如 gpt-5.5）。
-        // 多个自定义 provider 同名时只能信任 UI 传入的结构化 ModelSelection。
+        // replayable/legacy facade çš„ modelId å¯èƒ½åªæ˜¯ UI è¿è¡Œæ€æ¨¡åž‹åï¼ˆå¦‚ gpt-5.5ï¼‰ã€‚
+        // å¤šä¸ªè‡ªå®šä¹‰ provider åŒåæ—¶åªèƒ½ä¿¡ä»» UI ä¼ å…¥çš„ç»“æž„åŒ– ModelSelectionã€‚
         model: params.modelSelection,
       });
       const snapshot = await resumeSnapshot(target);
@@ -2779,9 +2806,9 @@ export function createZCodeTaskServiceAdapter(
       const target = getTaskTarget(params.taskId);
       const model = params.modelSelection;
       const thoughtLevel = params.thoughtLevel?.trim() ?? "";
-      // automation 过去先走 legacy session/setModel，再发 V4 Think。若目标模型
-      // 已带相同默认 Think，第二步会 noop 且不产 ModelSelected，导致 runtime 已切换但
-      // conversation 投影仍显示旧模型。这里用一条 V4 命令原子更新 runtime 与投影。
+      // automation è¿‡åŽ»å…ˆèµ° legacy session/setModelï¼Œå†å‘ V4 Thinkã€‚è‹¥ç›®æ ‡æ¨¡åž‹
+      // å·²å¸¦ç›¸åŒé»˜è®¤ Thinkï¼Œç¬¬äºŒæ­¥ä¼š noop ä¸”ä¸äº§ ModelSelectedï¼Œå¯¼è‡´ runtime å·²åˆ‡æ¢ä½†
+      // conversation æŠ•å½±ä»æ˜¾ç¤ºæ—§æ¨¡åž‹ã€‚è¿™é‡Œç”¨ä¸€æ¡ V4 å‘½ä»¤åŽŸå­æ›´æ–° runtime ä¸ŽæŠ•å½±ã€‚
       await sendConfigCasCommandV4(
         target,
         "switchModelConfig",
@@ -2793,9 +2820,9 @@ export function createZCodeTaskServiceAdapter(
         `automation session=${params.taskId} model=${model.providerId}/${model.modelId} thought=${thoughtLevel}`,
       );
       if (thoughtLevel) {
-        // 跨模型 switchModelConfig 会先采用目标模型默认 Think，避免误用源模型档位。
-        // automation 的 thought 已由创建/编辑表单按目标模型校验，可在模型事件落地后
-        // 再以同模型命令显式收敛；同默认值时 noop，非默认值时发布第二个 config delta。
+        // è·¨æ¨¡åž‹ switchModelConfig ä¼šå…ˆé‡‡ç”¨ç›®æ ‡æ¨¡åž‹é»˜è®¤ Thinkï¼Œé¿å…è¯¯ç”¨æºæ¨¡åž‹æ¡£ä½ã€‚
+        // automation çš„ thought å·²ç”±åˆ›å»º/ç¼–è¾‘è¡¨å•æŒ‰ç›®æ ‡æ¨¡åž‹æ ¡éªŒï¼Œå¯åœ¨æ¨¡åž‹äº‹ä»¶è½åœ°åŽ
+        // å†ä»¥åŒæ¨¡åž‹å‘½ä»¤æ˜¾å¼æ”¶æ•›ï¼›åŒé»˜è®¤å€¼æ—¶ noopï¼Œéžé»˜è®¤å€¼æ—¶å‘å¸ƒç¬¬äºŒä¸ª config deltaã€‚
         await sendConfigCasCommandV4(
           target,
           "switchModelConfig",
@@ -2817,13 +2844,13 @@ export function createZCodeTaskServiceAdapter(
 
     async getTaskNativeSessionLogFile() {
       const path = resolveZCodeAgentCurrentLogFilePath();
-      // 返回 ZCode Agent 的结构化日志 JSONL；日志行中的 sessionId 用于按当前任务排查。
+      // è¿”å›ž ZCode Agent çš„ç»“æž„åŒ–æ—¥å¿— JSONLï¼›æ—¥å¿—è¡Œä¸­çš„ sessionId ç”¨äºŽæŒ‰å½“å‰ä»»åŠ¡æŽ’æŸ¥ã€‚
       return { provider: GLM_PROVIDER, path, exists: existsSync(path) };
     },
 
     async getModelTrajectory(params) {
-      // ZCode Agent 把 taskId 当作 sessionId 落盘 model-io（见本文件其它 sessionId: params.taskId 用法），
-      // 这里按 sessionId 还原该 task 的模型调用轨迹，供 UI 侧边栏可视化。
+      // ZCode Agent æŠŠ taskId å½“ä½œ sessionId è½ç›˜ model-ioï¼ˆè§æœ¬æ–‡ä»¶å…¶å®ƒ sessionId: params.taskId ç”¨æ³•ï¼‰ï¼Œ
+      // è¿™é‡ŒæŒ‰ sessionId è¿˜åŽŸè¯¥ task çš„æ¨¡åž‹è°ƒç”¨è½¨è¿¹ï¼Œä¾› UI ä¾§è¾¹æ å¯è§†åŒ–ã€‚
       const trajectory = await readModelTrajectory(params.taskId, params.limit);
       logger.info(
         `[ZCodeTaskService] getModelTrajectory taskId=${params.taskId} records=${trajectory.records.length} files=${trajectory.sourceFiles.length} truncated=${trajectory.truncated}`,
@@ -2832,8 +2859,8 @@ export function createZCodeTaskServiceAdapter(
     },
 
     async getTaskTokenUsage(params): Promise<ZCodeTaskTokenUsageResult> {
-      // 摘要面板需要展示 task 的累计模型消耗，不能复用 usage_update 的 context window。
-      // 这里通过 ZCode Protocol 读 agent SQLite 的 model_usage 聚合，保持桌面和远控同一事实源。
+      // æ‘˜è¦é¢æ¿éœ€è¦å±•ç¤º task çš„ç´¯è®¡æ¨¡åž‹æ¶ˆè€—ï¼Œä¸èƒ½å¤ç”¨ usage_update çš„ context windowã€‚
+      // è¿™é‡Œé€šè¿‡ ZCode Protocol è¯» agent SQLite çš„ model_usage èšåˆï¼Œä¿æŒæ¡Œé¢å’Œè¿œæŽ§åŒä¸€äº‹å®žæºã€‚
       return options.zcodeAgentService.getTaskTokenUsage({
         workspacePath: params.workspacePath,
         workspaceIdentity: params.workspaceIdentity,
@@ -2855,17 +2882,17 @@ export function createZCodeTaskServiceAdapter(
     async deleteTask(params): Promise<void> {
       setOverlay(params, { deleted: true });
       const meta = await updateIndexedTaskState(params, { deleted: true });
-      // task_meta_changed 只会重拉普通 membership，不能表达持久删除语义；
-      // sessions-index 后续仍会返回 CLI 中保留的 session，必须用 task_deleted 让 UI
-      // 立即移除缓存并换代 deleted tombstone join，避免重启或 live upsert 后复活。
-      // 同时携带 meta，让桌面/远控的重复订阅能按同一事件去重 membership bump。
+      // task_meta_changed åªä¼šé‡æ‹‰æ™®é€š membershipï¼Œä¸èƒ½è¡¨è¾¾æŒä¹…åˆ é™¤è¯­ä¹‰ï¼›
+      // sessions-index åŽç»­ä»ä¼šè¿”å›ž CLI ä¸­ä¿ç•™çš„ sessionï¼Œå¿…é¡»ç”¨ task_deleted è®© UI
+      // ç«‹å³ç§»é™¤ç¼“å­˜å¹¶æ¢ä»£ deleted tombstone joinï¼Œé¿å…é‡å¯æˆ– live upsert åŽå¤æ´»ã€‚
+      // åŒæ—¶æºå¸¦ metaï¼Œè®©æ¡Œé¢/è¿œæŽ§çš„é‡å¤è®¢é˜…èƒ½æŒ‰åŒä¸€äº‹ä»¶åŽ»é‡ membership bumpã€‚
       emitWorkspaceTaskListChanged(params, meta, "task_deleted");
     },
 
     async deleteArchivedTask(params): Promise<boolean> {
       const meta = await taskIndexRepo.deleteArchivedTask(params);
       if (!meta) return false;
-      // 先持久化成功再写 overlay；否则失败项会被内存 deleted 标记提前隐藏。
+      // å…ˆæŒä¹…åŒ–æˆåŠŸå†å†™ overlayï¼›å¦åˆ™å¤±è´¥é¡¹ä¼šè¢«å†…å­˜ deleted æ ‡è®°æå‰éšè—ã€‚
       setOverlay(params, { deleted: true });
       emitWorkspaceTaskListChanged(params, meta, "task_deleted");
       return true;
@@ -2887,7 +2914,7 @@ export function createZCodeTaskServiceAdapter(
           taskId,
         };
         try {
-          // 保留逐项事务与归档 guard：一项失败不能回滚其它成功项，也不能提前隐藏失败项。
+          // ä¿ç•™é€é¡¹äº‹åŠ¡ä¸Žå½’æ¡£ guardï¼šä¸€é¡¹å¤±è´¥ä¸èƒ½å›žæ»šå…¶å®ƒæˆåŠŸé¡¹ï¼Œä¹Ÿä¸èƒ½æå‰éšè—å¤±è´¥é¡¹ã€‚
           const meta = await taskIndexRepo.deleteArchivedTask(target);
           if (!meta) {
             result.skippedTaskIds.push(taskId);
@@ -2897,12 +2924,15 @@ export function createZCodeTaskServiceAdapter(
           result.deletedTaskIds.push(taskId);
         } catch (error) {
           result.failedTaskIds.push(taskId);
-          logger.warn(undefined, "[ArchivedTaskDeletion] 批次目标删除失败", { ...target, error });
+          logger.warn(undefined, "[ArchivedTaskDeletion] æ‰¹æ¬¡ç›®æ ‡åˆ é™¤å¤±è´¥", {
+            ...target,
+            error,
+          });
         }
       }
       if (result.deletedTaskIds.length > 0) {
-        // 根因：循环调用单条接口会逐项广播，驱动 Host 与 UI 各自全量重读。
-        // 批次完成只发一次 workspace 事件，仍使所有观察端换代 deleted membership，防止任务复活。
+        // æ ¹å› ï¼šå¾ªçŽ¯è°ƒç”¨å•æ¡æŽ¥å£ä¼šé€é¡¹å¹¿æ’­ï¼Œé©±åŠ¨ Host ä¸Ž UI å„è‡ªå…¨é‡é‡è¯»ã€‚
+        // æ‰¹æ¬¡å®Œæˆåªå‘ä¸€æ¬¡ workspace äº‹ä»¶ï¼Œä»ä½¿æ‰€æœ‰è§‚å¯Ÿç«¯æ¢ä»£ deleted membershipï¼Œé˜²æ­¢ä»»åŠ¡å¤æ´»ã€‚
         emitWorkspaceTaskListChanged(params, undefined, "task_deleted");
       }
       logger.info(undefined, "[ArchivedTaskDeletion] batch completed", {
@@ -2933,8 +2963,8 @@ export function createZCodeTaskServiceAdapter(
         });
         const meta = await updateIndexedTaskState(params, {
           title: params.title,
-          // 手动重命名是 app 侧 task meta 变更。之前只写 title 不更新时间，
-          // 运行中前端 optimistic merge 会把同 updatedAt 的旧长标题当成更强 meta，导致标题要等任务完成才刷新。
+          // æ‰‹åŠ¨é‡å‘½åæ˜¯ app ä¾§ task meta å˜æ›´ã€‚ä¹‹å‰åªå†™ title ä¸æ›´æ–°æ—¶é—´ï¼Œ
+          // è¿è¡Œä¸­å‰ç«¯ optimistic merge ä¼šæŠŠåŒ updatedAt çš„æ—§é•¿æ ‡é¢˜å½“æˆæ›´å¼º metaï¼Œå¯¼è‡´æ ‡é¢˜è¦ç­‰ä»»åŠ¡å®Œæˆæ‰åˆ·æ–°ã€‚
           updatedAt: renamedAt,
           titleOverridden: true,
         });
@@ -2956,12 +2986,12 @@ export function createZCodeTaskServiceAdapter(
           });
           assertV4CommandAckOk("renameSession", ack, `session=${params.taskId}`);
         } catch (error) {
-          // 旧侧边栏 rename 过去只写 tasks-index；v4 sessions-index 读 CLI
-          // session store，导致手动标题在新侧边栏丢失。这里尽力同步 renameSession，
-          // 但历史/导入类 task 可能没有活跃 v4 session，不能因此破坏既有重命名。
+          // æ—§ä¾§è¾¹æ  rename è¿‡åŽ»åªå†™ tasks-indexï¼›v4 sessions-index è¯» CLI
+          // session storeï¼Œå¯¼è‡´æ‰‹åŠ¨æ ‡é¢˜åœ¨æ–°ä¾§è¾¹æ ä¸¢å¤±ã€‚è¿™é‡Œå°½åŠ›åŒæ­¥ renameSessionï¼Œ
+          // ä½†åŽ†å²/å¯¼å…¥ç±» task å¯èƒ½æ²¡æœ‰æ´»è·ƒ v4 sessionï¼Œä¸èƒ½å› æ­¤ç ´åæ—¢æœ‰é‡å‘½åã€‚
           logger.warn(
             undefined,
-            "同步 task rename 到 v4 session store 失败，保留 task-index 标题",
+            "åŒæ­¥ task rename åˆ° v4 session store å¤±è´¥ï¼Œä¿ç•™ task-index æ ‡é¢˜",
             {
               taskId: params.taskId,
               workspacePath: params.workspacePath,
@@ -2970,7 +3000,7 @@ export function createZCodeTaskServiceAdapter(
             },
           );
         }
-        // 手动重命名同样是标题变更，与 pin/archive/unread 归属无关，用专属 reason。
+        // æ‰‹åŠ¨é‡å‘½ååŒæ ·æ˜¯æ ‡é¢˜å˜æ›´ï¼Œä¸Ž pin/archive/unread å½’å±žæ— å…³ï¼Œç”¨ä¸“å±ž reasonã€‚
         emitWorkspaceTaskListChanged(params, meta, "task_title_changed");
         logger.info(undefined, "[ZCodeTaskService] renameTask event emitted", {
           taskId: params.taskId,
@@ -3006,8 +3036,8 @@ export function createZCodeTaskServiceAdapter(
           workspaceIdentity: params.workspaceIdentity,
           expectedUnreadAt: params.expectedUnreadAt,
         });
-        // 旧手机点击可能晚于新的终态未读到达。CAS 未命中时必须把
-        // service overlay 对账到当前 meta，不能先乐观清除后留下 renderer-only 已读状态。
+        // æ—§æ‰‹æœºç‚¹å‡»å¯èƒ½æ™šäºŽæ–°çš„ç»ˆæ€æœªè¯»åˆ°è¾¾ã€‚CAS æœªå‘½ä¸­æ—¶å¿…é¡»æŠŠ
+        // service overlay å¯¹è´¦åˆ°å½“å‰ metaï¼Œä¸èƒ½å…ˆä¹è§‚æ¸…é™¤åŽç•™ä¸‹ renderer-only å·²è¯»çŠ¶æ€ã€‚
         setOverlay(params, { unreadAt: result.meta.unreadAt });
         if (result.cleared) {
           emitWorkspaceTaskListChanged(params, result.meta, "task_meta_changed");
@@ -3018,10 +3048,10 @@ export function createZCodeTaskServiceAdapter(
       const unreadAt = params.unread ? Date.now() : undefined;
       setOverlay(params, { unreadAt });
       const meta = await updateIndexedTaskState(params, { unreadAt });
-      // repository 可能为避免同毫秒 CAS 版本碰撞而推进 unreadAt；
-      // service overlay 必须对账最终持久值，否则后续 snapshot 会继续暴露旧 marker。
+      // repository å¯èƒ½ä¸ºé¿å…åŒæ¯«ç§’ CAS ç‰ˆæœ¬ç¢°æ’žè€ŒæŽ¨è¿› unreadAtï¼›
+      // service overlay å¿…é¡»å¯¹è´¦æœ€ç»ˆæŒä¹…å€¼ï¼Œå¦åˆ™åŽç»­ snapshot ä¼šç»§ç»­æš´éœ²æ—§ markerã€‚
       setOverlay(params, { unreadAt: meta.unreadAt });
-      // unread 归属在 tasks-index、sessions-index 不携带，必须走 task_meta_changed 触发 membership 重拉。
+      // unread å½’å±žåœ¨ tasks-indexã€sessions-index ä¸æºå¸¦ï¼Œå¿…é¡»èµ° task_meta_changed è§¦å‘ membership é‡æ‹‰ã€‚
       emitWorkspaceTaskListChanged(params, meta, "task_meta_changed");
       return meta;
     },
@@ -3049,8 +3079,8 @@ export function createZCodeTaskServiceAdapter(
     },
 
     onDynamicTaskTerminalOutcome(taskId: string): Event<ZCodeTaskTerminalOutcome> {
-      // 合并迁移：V4 syncer 只暴露归一化后的终态 kind，不再携带旧协议 event payload。
-      // automation 只需要稳定收口运行结果，因此 completed/failed 在此映射为公开 outcome。
+      // åˆå¹¶è¿ç§»ï¼šV4 syncer åªæš´éœ²å½’ä¸€åŒ–åŽçš„ç»ˆæ€ kindï¼Œä¸å†æºå¸¦æ—§åè®® event payloadã€‚
+      // automation åªéœ€è¦ç¨³å®šæ”¶å£è¿è¡Œç»“æžœï¼Œå› æ­¤ completed/failed åœ¨æ­¤æ˜ å°„ä¸ºå…¬å¼€ outcomeã€‚
       return (listener) =>
         taskIndexSyncer.onSessionTerminalEvent((terminal) => {
           if (terminal.target.sessionId !== taskId) {
@@ -3089,13 +3119,13 @@ export function createZCodeTaskServiceAdapter(
       rememberTaskTarget(target);
       return (listener) => {
         const localDisposable = getTaskEmitter(target).event(listener);
-        // 这里仍是 services/ 内旧 session/subscribe 词表的
-        // 最后消费点（replayable 的 stream 投影源）。写路径（send/stop/交互回执）
-        // 已收敛 v4 命令；读路径消费方是
-        // host 镜像 taskRealtimePort（词表同为 ZCodeStreamEvent），镜像换 v4 帧 = relay
-        // 协议与手机 store 整链重做。
-        // 过渡归宿 = replayable 读路径 v4 store，与 host/index.ts 镜像、
-        // mapStateUpdated/mapServiceEvent、agentService.onDynamicSessionEvent 同批摘除。
+        // è¿™é‡Œä»æ˜¯ services/ å†…æ—§ session/subscribe è¯è¡¨çš„
+        // æœ€åŽæ¶ˆè´¹ç‚¹ï¼ˆreplayable çš„ stream æŠ•å½±æºï¼‰ã€‚å†™è·¯å¾„ï¼ˆsend/stop/äº¤äº’å›žæ‰§ï¼‰
+        // å·²æ”¶æ•› v4 å‘½ä»¤ï¼›è¯»è·¯å¾„æ¶ˆè´¹æ–¹æ˜¯
+        // host é•œåƒ taskRealtimePortï¼ˆè¯è¡¨åŒä¸º ZCodeStreamEventï¼‰ï¼Œé•œåƒæ¢ v4 å¸§ = relay
+        // åè®®ä¸Žæ‰‹æœº store æ•´é“¾é‡åšã€‚
+        // è¿‡æ¸¡å½’å®¿ = replayable è¯»è·¯å¾„ v4 storeï¼Œä¸Ž host/index.ts é•œåƒã€
+        // mapStateUpdated/mapServiceEventã€agentService.onDynamicSessionEvent åŒæ‰¹æ‘˜é™¤ã€‚
         const upstreamDisposable = options.zcodeAgentService.onDynamicSessionEvent({
           workspacePath: params.workspacePath,
           workspaceIdentity: params.workspaceIdentity,
@@ -3124,9 +3154,9 @@ export function createZCodeTaskServiceAdapter(
       }
       disposed = true;
       memoryDiagnostics.dispose();
-      // syncer 持有 agentService 的 v4 帧订阅（sessions-index/workspace-config），
-      // 必须在 agentService.disposeAll 前释放，否则 emitter dispose 时仍会回调到已失效的 syncer。
-      // workspaceEmitters 已下沉到 syncer，由 syncer.disposeAll 统一回收。
+      // syncer æŒæœ‰ agentService çš„ v4 å¸§è®¢é˜…ï¼ˆsessions-index/workspace-configï¼‰ï¼Œ
+      // å¿…é¡»åœ¨ agentService.disposeAll å‰é‡Šæ”¾ï¼Œå¦åˆ™ emitter dispose æ—¶ä»ä¼šå›žè°ƒåˆ°å·²å¤±æ•ˆçš„ syncerã€‚
+      // workspaceEmitters å·²ä¸‹æ²‰åˆ° syncerï¼Œç”± syncer.disposeAll ç»Ÿä¸€å›žæ”¶ã€‚
       taskIndexSyncer.disposeAll();
       options.zcodeAgentService.disposeAll();
       disposeLocalTaskState();
@@ -3137,8 +3167,8 @@ export function createZCodeTaskServiceAdapter(
         return;
       }
       disposed = true;
-      // app 退出必须先断开 task index syncer 的订阅，再等待 agent 进程树完成清理；
-      // 否则 host 退出时会把 zcode-cli 的 SIGKILL 兜底 timer 一起带走。
+      // app é€€å‡ºå¿…é¡»å…ˆæ–­å¼€ task index syncer çš„è®¢é˜…ï¼Œå†ç­‰å¾… agent è¿›ç¨‹æ ‘å®Œæˆæ¸…ç†ï¼›
+      // å¦åˆ™ host é€€å‡ºæ—¶ä¼šæŠŠ zcode-cli çš„ SIGKILL å…œåº• timer ä¸€èµ·å¸¦èµ°ã€‚
       taskIndexSyncer.disposeAll();
       await disposeZCodeAgentServiceAndWait();
       disposeLocalTaskState();
@@ -3243,8 +3273,8 @@ function limitTaskSnapshotMessages(
   return {
     ...snapshot,
     messages: history.truncatedBefore ? snapshot.messages.slice(-limit) : snapshot.messages,
-    // 手机 replayable 首屏为了性能只拿尾部窗口。
-    // UI 不能再用“返回条数是否等于 limit”猜测是否还有更早历史，因为短尾部终态快照也可能是裁剪窗口。
+    // æ‰‹æœº replayable é¦–å±ä¸ºäº†æ€§èƒ½åªæ‹¿å°¾éƒ¨çª—å£ã€‚
+    // UI ä¸èƒ½å†ç”¨â€œè¿”å›žæ¡æ•°æ˜¯å¦ç­‰äºŽ limitâ€çŒœæµ‹æ˜¯å¦è¿˜æœ‰æ›´æ—©åŽ†å²ï¼Œå› ä¸ºçŸ­å°¾éƒ¨ç»ˆæ€å¿«ç…§ä¹Ÿå¯èƒ½æ˜¯è£å‰ªçª—å£ã€‚
     history,
   };
 }
@@ -3252,8 +3282,8 @@ function limitTaskSnapshotMessages(
 function parseModelPickerValue(value: string): ModelSelection {
   const customModel = decodeCustomModelValue(value);
   if (customModel?.providerId && customModel.modelName) {
-    // UI 下拉的 custom:provider:model 只是展示态，不能原样传给 zcode-cli。
-    // 旧解析会先按冒号截断成 custom，最终下发 glm/custom，触发 Unsupported model。
+    // UI ä¸‹æ‹‰çš„ custom:provider:model åªæ˜¯å±•ç¤ºæ€ï¼Œä¸èƒ½åŽŸæ ·ä¼ ç»™ zcode-cliã€‚
+    // æ—§è§£æžä¼šå…ˆæŒ‰å†’å·æˆªæ–­æˆ customï¼Œæœ€ç»ˆä¸‹å‘ glm/customï¼Œè§¦å‘ Unsupported modelã€‚
     return {
       providerId: customModel.providerId,
       modelId: customModel.modelName,
@@ -3268,8 +3298,8 @@ function toZCodeMode(mode: ZCodeTaskMode | undefined): ZCodeSessionMode | undefi
     case "plan":
       return "plan";
     case "edit":
-      // automation UI 保存的“自动编辑”使用 canonical edit。旧映射漏掉该值，
-      // 调用方的 ?? build 会把权限模式静默降级成“变更前确认”。
+      // automation UI ä¿å­˜çš„â€œè‡ªåŠ¨ç¼–è¾‘â€ä½¿ç”¨ canonical editã€‚æ—§æ˜ å°„æ¼æŽ‰è¯¥å€¼ï¼Œ
+      // è°ƒç”¨æ–¹çš„ ?? build ä¼šæŠŠæƒé™æ¨¡å¼é™é»˜é™çº§æˆâ€œå˜æ›´å‰ç¡®è®¤â€ã€‚
       return "edit";
     case "yolo":
       return "yolo";
@@ -3306,8 +3336,8 @@ function addSessionForkSnapshotFallback(
       role: "user",
       content: "",
       timestamp: snapshot.session.createdAt,
-      // 旧的纯对话 fork 没有落库 synthetic notice，只能从 session.parentSessionId
-      // 恢复一个不可跳转的分割线，避免历史 fork 会话完全看不到来源边界。
+      // æ—§çš„çº¯å¯¹è¯ fork æ²¡æœ‰è½åº“ synthetic noticeï¼Œåªèƒ½ä»Ž session.parentSessionId
+      // æ¢å¤ä¸€ä¸ªä¸å¯è·³è½¬çš„åˆ†å‰²çº¿ï¼Œé¿å…åŽ†å² fork ä¼šè¯å®Œå…¨çœ‹ä¸åˆ°æ¥æºè¾¹ç•Œã€‚
       syntheticTimeline: {
         version: 1,
         kind: "synthetic",
@@ -3344,8 +3374,8 @@ function addGoalVerificationTimelineSnapshotFallback(
       role: "assistant",
       content: "",
       timestamp: item.startedAt ?? item.updatedAt,
-      // goal verifier lifecycle 是 agent snapshot 的持久状态，不一定有
-      // 对应 message history；task facade 也要按 target+iteration 和 anchor 补 divider，避免恢复后重复或错位。
+      // goal verifier lifecycle æ˜¯ agent snapshot çš„æŒä¹…çŠ¶æ€ï¼Œä¸ä¸€å®šæœ‰
+      // å¯¹åº” message historyï¼›task facade ä¹Ÿè¦æŒ‰ target+iteration å’Œ anchor è¡¥ dividerï¼Œé¿å…æ¢å¤åŽé‡å¤æˆ–é”™ä½ã€‚
       syntheticTimeline: item,
     }));
   if (timelineMessages.length === 0) {
@@ -3403,8 +3433,8 @@ function normalizeGoalVerificationTimelineMessageOrder(
   if (timelineMessages.length === 0) {
     return messages;
   }
-  // agent history 已存在的 verifier divider 也可能因为异步到达排到下一条用户输入后面；
-  // task facade snapshot 必须按 anchor 重新投影，而不是只给缺失 divider 做 fallback。
+  // agent history å·²å­˜åœ¨çš„ verifier divider ä¹Ÿå¯èƒ½å› ä¸ºå¼‚æ­¥åˆ°è¾¾æŽ’åˆ°ä¸‹ä¸€æ¡ç”¨æˆ·è¾“å…¥åŽé¢ï¼›
+  // task facade snapshot å¿…é¡»æŒ‰ anchor é‡æ–°æŠ•å½±ï¼Œè€Œä¸æ˜¯åªç»™ç¼ºå¤± divider åš fallbackã€‚
   return insertGoalVerificationTimelineMessages(
     messages.filter((message) => message.syntheticTimeline?.type !== "goal_verification"),
     timelineMessages,
@@ -3479,8 +3509,8 @@ function backgroundTaskNotificationToolUpdateFromInput(params: {
     toolId: parsed.toolUseId,
     status,
     content: parsed.notification.result ?? parsed.notification.summary,
-    // replayable 动态事件也必须把 notification error 放到标准 tool error，
-    // 否则手机远控与桌面 continuous 的失败详情会产生分叉。
+    // replayable åŠ¨æ€äº‹ä»¶ä¹Ÿå¿…é¡»æŠŠ notification error æ”¾åˆ°æ ‡å‡† tool errorï¼Œ
+    // å¦åˆ™æ‰‹æœºè¿œæŽ§ä¸Žæ¡Œé¢ continuous çš„å¤±è´¥è¯¦æƒ…ä¼šäº§ç”Ÿåˆ†å‰ã€‚
     ...(status === "failed" && parsed.notification.error
       ? { error: parsed.notification.error }
       : {}),
@@ -3503,8 +3533,8 @@ function mapMessage(
   let syntheticTimeline: ZCodeTimelineMeta | undefined;
   for (const part of message.parts) {
     if (part.type === "text") {
-      // fork notice 等结构化 synthetic 消息把 timeline meta 写在 part.metadata 上；
-      // 持久化层不带 metadata 字段，所以提取一份挂到 message 级别供 UI 渲染分隔条。
+      // fork notice ç­‰ç»“æž„åŒ– synthetic æ¶ˆæ¯æŠŠ timeline meta å†™åœ¨ part.metadata ä¸Šï¼›
+      // æŒä¹…åŒ–å±‚ä¸å¸¦ metadata å­—æ®µï¼Œæ‰€ä»¥æå–ä¸€ä»½æŒ‚åˆ° message çº§åˆ«ä¾› UI æ¸²æŸ“åˆ†éš”æ¡ã€‚
       if (!syntheticTimeline) {
         const fromText = extractSyntheticTimelineFromTextPart(part);
         if (fromText) {
@@ -3512,8 +3542,8 @@ function mapMessage(
         }
       }
     } else if (part.type === "compaction" && !syntheticTimeline) {
-      // compact 的模型 summary/timelineText 属于 agent 内部上下文，不能作为正文透出。
-      // 持久化恢复只从结构化字段合成横线，展示文案由 UI/TUI 本地 i18n 决定。
+      // compact çš„æ¨¡åž‹ summary/timelineText å±žäºŽ agent å†…éƒ¨ä¸Šä¸‹æ–‡ï¼Œä¸èƒ½ä½œä¸ºæ­£æ–‡é€å‡ºã€‚
+      // æŒä¹…åŒ–æ¢å¤åªä»Žç»“æž„åŒ–å­—æ®µåˆæˆæ¨ªçº¿ï¼Œå±•ç¤ºæ–‡æ¡ˆç”± UI/TUI æœ¬åœ° i18n å†³å®šã€‚
       syntheticTimeline = synthesizeCompactionTimeline(part);
     }
   }
@@ -3533,7 +3563,7 @@ function mapMessage(
     role: message.info.role,
     content: textFromParts(message.parts),
     timestamp: message.info.time.created,
-    // 未绑定恢复仍需呈现完整历史，不能为缺失的消息来源补默认模型。
+    // æœªç»‘å®šæ¢å¤ä»éœ€å‘ˆçŽ°å®Œæ•´åŽ†å²ï¼Œä¸èƒ½ä¸ºç¼ºå¤±çš„æ¶ˆæ¯æ¥æºè¡¥é»˜è®¤æ¨¡åž‹ã€‚
     model: message.info.model ? formatModelPickerValue(message.info.model) : undefined,
     ...(syntheticTimeline ? { syntheticTimeline } : {}),
     ...(attachments ? { attachments } : {}),
@@ -3571,8 +3601,8 @@ function mapPromptAttachmentFromFilePart(
   const dataBase64 = dataBase64FromDataUrl(part.url);
   const localPath = localPathFromAttachmentPart(part.url, metadata);
 
-  // 历史恢复链路之前只把 file part 当作模型上下文，不回填 UI 的 attachments 字段。
-  // 用户消息恢复后附件 chip 因此消失；这里从 agent 持久化的 file part 反投影回发送时的附件形态。
+  // åŽ†å²æ¢å¤é“¾è·¯ä¹‹å‰åªæŠŠ file part å½“ä½œæ¨¡åž‹ä¸Šä¸‹æ–‡ï¼Œä¸å›žå¡« UI çš„ attachments å­—æ®µã€‚
+  // ç”¨æˆ·æ¶ˆæ¯æ¢å¤åŽé™„ä»¶ chip å› æ­¤æ¶ˆå¤±ï¼›è¿™é‡Œä»Ž agent æŒä¹…åŒ–çš„ file part åæŠ•å½±å›žå‘é€æ—¶çš„é™„ä»¶å½¢æ€ã€‚
   if (mimeType.startsWith("image/")) {
     return {
       kind: "image",
@@ -3683,8 +3713,8 @@ function synthesizeCompactionTimeline(
   const operationId = stringValue(metadata.operationId) ?? part.partId;
   const status = timelineStatusValue(metadata.timelineStatus);
   if (!status && !part.summaryMessageId) {
-    // compact summary user message 也带 compaction metadata，
-    // 但它是模型上下文，不是 UI timeline；否则 snapshot 恢复会多渲染一条横线。
+    // compact summary user message ä¹Ÿå¸¦ compaction metadataï¼Œ
+    // ä½†å®ƒæ˜¯æ¨¡åž‹ä¸Šä¸‹æ–‡ï¼Œä¸æ˜¯ UI timelineï¼›å¦åˆ™ snapshot æ¢å¤ä¼šå¤šæ¸²æŸ“ä¸€æ¡æ¨ªçº¿ã€‚
     return undefined;
   }
   const trigger = timelineTriggerValue(metadata.trigger) ?? (part.auto ? "auto" : "manual");
@@ -3727,15 +3757,15 @@ function mapToolPart(
 ): ZCodePersistedToolCall {
   const state = part.state;
   const taskNotification = backgroundTaskNotifications?.get(part.callId);
-  // ZCode Protocol 的 part.callId 是实时流和终态 snapshot 共同的工具身份。
-  // 以前只保存 metadata 会丢掉 toolCallId，手机 replayable 里 result-only 临时工具就无法被终态快照覆盖。
+  // ZCode Protocol çš„ part.callId æ˜¯å®žæ—¶æµå’Œç»ˆæ€ snapshot å…±åŒçš„å·¥å…·èº«ä»½ã€‚
+  // ä»¥å‰åªä¿å­˜ metadata ä¼šä¸¢æŽ‰ toolCallIdï¼Œæ‰‹æœº replayable é‡Œ result-only ä¸´æ—¶å·¥å…·å°±æ— æ³•è¢«ç»ˆæ€å¿«ç…§è¦†ç›–ã€‚
   const raw = attachZCodeBackgroundTaskNotificationToRaw(
     attachToolCallIdToRaw("metadata" in state ? (state.metadata ?? state) : state, part.callId),
     taskNotification,
   );
   if (state.status === "completed") {
-    // snapshot 里的 completed 是 background Agent launch ACK；failed
-    // notification 必须在 replayable restore 中覆盖它，但不能顺带改变 stopped 等既有语义。
+    // snapshot é‡Œçš„ completed æ˜¯ background Agent launch ACKï¼›failed
+    // notification å¿…é¡»åœ¨ replayable restore ä¸­è¦†ç›–å®ƒï¼Œä½†ä¸èƒ½é¡ºå¸¦æ”¹å˜ stopped ç­‰æ—¢æœ‰è¯­ä¹‰ã€‚
     const notificationStatus = taskNotification?.status
       ? zcodeBackgroundTaskNotificationToolUpdateStatus(taskNotification.status)
       : undefined;
@@ -3932,14 +3962,14 @@ function mapSessionEvent(
   const payload = asRecord(event.payload);
   const inputId = stringValue(payload.inputId);
   const queryId = stringValue(payload.queryId);
-  // 兼容层对外的 traceId 语义是“一次用户输入到本轮回复结束”的轮次标识。
-  // ZCode Protocol runtime trace 只在事件没有 inputId 时兜底，避免同一轮 chunk/tool/complete 被拆成不同 trace。
+  // å…¼å®¹å±‚å¯¹å¤–çš„ traceId è¯­ä¹‰æ˜¯â€œä¸€æ¬¡ç”¨æˆ·è¾“å…¥åˆ°æœ¬è½®å›žå¤ç»“æŸâ€çš„è½®æ¬¡æ ‡è¯†ã€‚
+  // ZCode Protocol runtime trace åªåœ¨äº‹ä»¶æ²¡æœ‰ inputId æ—¶å…œåº•ï¼Œé¿å…åŒä¸€è½® chunk/tool/complete è¢«æ‹†æˆä¸åŒ traceã€‚
   const eventInputId = inputId ?? activePromptInputId;
   const traceId = eventInputId ?? protocolTraceId;
   if (eventInputId && eventInputId !== protocolTraceId) {
     logger.debug(
       eventInputId,
-      `对齐 ZCode prompt inputId eventType=${event.type} protocolTrace=${protocolTraceId}`,
+      `å¯¹é½ ZCode prompt inputId eventType=${event.type} protocolTrace=${protocolTraceId}`,
     );
   }
   const turnKey = `${event.sessionId}:${event.turnId ?? eventInputId ?? traceId}`;
@@ -4034,9 +4064,9 @@ function mapSessionEvent(
       toolProjectionMemory?.toolNameById?.set(toolCallId, toolName);
     }
     if (isUserInputBackedPermissionToolName(toolName)) {
-      // AskUserQuestion/ExitPlanMode 的 permission.requested 只是 core 的等待态标记；
-      // 真正需要展示的问题会通过 interaction/requestUserInput 到达。继续把它投成普通权限，
-      // UI 会出现 Allow/Deny 弹窗且无法把答案写回工具 input。
+      // AskUserQuestion/ExitPlanMode çš„ permission.requested åªæ˜¯ core çš„ç­‰å¾…æ€æ ‡è®°ï¼›
+      // çœŸæ­£éœ€è¦å±•ç¤ºçš„é—®é¢˜ä¼šé€šè¿‡ interaction/requestUserInput åˆ°è¾¾ã€‚ç»§ç»­æŠŠå®ƒæŠ•æˆæ™®é€šæƒé™ï¼Œ
+      // UI ä¼šå‡ºçŽ° Allow/Deny å¼¹çª—ä¸”æ— æ³•æŠŠç­”æ¡ˆå†™å›žå·¥å…· inputã€‚
       return [];
     }
     return [permissionPayloadToStreamEvent(params.taskId, traceId, eventInputId, payload)];
@@ -4133,7 +4163,7 @@ function mapSessionEvent(
       ];
     }
     const attribution = errorAttributionSchema.safeParse(errorPayload.attribution);
-    // dynamic task event 也会写入 task index；只修 snapshot 读路径仍会丢 live 归因。
+    // dynamic task event ä¹Ÿä¼šå†™å…¥ task indexï¼›åªä¿® snapshot è¯»è·¯å¾„ä»ä¼šä¸¢ live å½’å› ã€‚
     return [
       {
         type: "task_error",
@@ -4141,7 +4171,7 @@ function mapSessionEvent(
         traceId,
         ...(eventInputId ? { inputId: eventInputId } : {}),
         error: stringValue(errorPayload.message) ?? "ZCode session failed",
-        // type 是外层错误分类，code 才是 provider/subagent 要展示的真实错误码。
+        // type æ˜¯å¤–å±‚é”™è¯¯åˆ†ç±»ï¼Œcode æ‰æ˜¯ provider/subagent è¦å±•ç¤ºçš„çœŸå®žé”™è¯¯ç ã€‚
         code: stringValue(errorPayload.code) ?? stringValue(errorPayload.type),
         detail: stringValue(errorPayload.detail),
         ...(attribution.success ? { attribution: attribution.data } : {}),
@@ -4170,8 +4200,8 @@ function maybeBuildApiRetryClearOnModelProgress(
   if (!hasActiveApiRetry || !isZCodeModelRetryRecoveryProgressPayload(payload)) {
     return null;
   }
-  // 重试请求开始不代表恢复成功，立即清会让输入栏闪烁；
-  // 只有 retry attempt 真的产出模型内容，才清掉“重试中”运行态。
+  // é‡è¯•è¯·æ±‚å¼€å§‹ä¸ä»£è¡¨æ¢å¤æˆåŠŸï¼Œç«‹å³æ¸…ä¼šè®©è¾“å…¥æ é—ªçƒï¼›
+  // åªæœ‰ retry attempt çœŸçš„äº§å‡ºæ¨¡åž‹å†…å®¹ï¼Œæ‰æ¸…æŽ‰â€œé‡è¯•ä¸­â€è¿è¡Œæ€ã€‚
   return {
     type: "session_info_update",
     taskId,
@@ -4280,8 +4310,8 @@ function mapToolInputStreaming(
     );
     streamingToolInputById?.set(toolId, state);
     if (!shouldMaterializeZCodeStreamingToolInputPreview(state, { toolName })) {
-      // 性能修复：services 兼容投影曾经每个 delta 都解析累计 JSON，并把 rawInput 全量塞进 raw。
-      // 这里先只维护 tombstone buffer，达到预算或控制边界再 emit，避免 host/renderer 双端 O(n²)。
+      // æ€§èƒ½ä¿®å¤ï¼šservices å…¼å®¹æŠ•å½±æ›¾ç»æ¯ä¸ª delta éƒ½è§£æžç´¯è®¡ JSONï¼Œå¹¶æŠŠ rawInput å…¨é‡å¡žè¿› rawã€‚
+      // è¿™é‡Œå…ˆåªç»´æŠ¤ tombstone bufferï¼Œè¾¾åˆ°é¢„ç®—æˆ–æŽ§åˆ¶è¾¹ç•Œå† emitï¼Œé¿å… host/renderer åŒç«¯ O(nÂ²)ã€‚
       return null;
     }
     const preview = buildZCodeStreamingToolInputPreview(state.rawInput);
@@ -4340,8 +4370,8 @@ function mapToolInputStreaming(
       title: previewTitle,
       toolName: previewToolName,
       kind: previewTitle,
-      // 性能修复：tool_input_end 与最终 tool_call 相邻时不再重复解析同一份大 JSON；
-      // end 只作为生命周期边界，完整 input 交给 tool_call 一次性落库/渲染。
+      // æ€§èƒ½ä¿®å¤ï¼štool_input_end ä¸Žæœ€ç»ˆ tool_call ç›¸é‚»æ—¶ä¸å†é‡å¤è§£æžåŒä¸€ä»½å¤§ JSONï¼›
+      // end åªä½œä¸ºç”Ÿå‘½å‘¨æœŸè¾¹ç•Œï¼Œå®Œæ•´ input äº¤ç»™ tool_call ä¸€æ¬¡æ€§è½åº“/æ¸²æŸ“ã€‚
       raw: buildRaw(undefined, state.rawInput),
     };
   }
@@ -4364,8 +4394,8 @@ function mapToolInputStreaming(
       finalizeZCodeToolProjectionInput(toolId, preview.input, toolProjectionMemory);
     }
     streamingToolInputById?.set(toolId, {
-      // 性能修复：最终 tool_call 已经持有完整 input，compat projection 不再长期保留
-      // streaming raw buffer，避免并发长任务时 host 侧内存和序列化成本继续放大。
+      // æ€§èƒ½ä¿®å¤ï¼šæœ€ç»ˆ tool_call å·²ç»æŒæœ‰å®Œæ•´ inputï¼Œcompat projection ä¸å†é•¿æœŸä¿ç•™
+      // streaming raw bufferï¼Œé¿å…å¹¶å‘é•¿ä»»åŠ¡æ—¶ host ä¾§å†…å­˜å’Œåºåˆ—åŒ–æˆæœ¬ç»§ç»­æ”¾å¤§ã€‚
       rawInput: "",
       deltaCount: state?.deltaCount,
       lastPreviewAt: Date.now(),
@@ -4484,8 +4514,8 @@ function mapCompactTimelinePayload(
     traceId,
     ...(inputId ? { inputId } : {}),
     ...(messageId ? { messageId } : {}),
-    // compact lifecycle 是结构化状态事件，不是 assistant 正文。
-    // 即使上游误带 text，也不能把内部 summary/prompt 投影到聊天区。
+    // compact lifecycle æ˜¯ç»“æž„åŒ–çŠ¶æ€äº‹ä»¶ï¼Œä¸æ˜¯ assistant æ­£æ–‡ã€‚
+    // å³ä½¿ä¸Šæ¸¸è¯¯å¸¦ textï¼Œä¹Ÿä¸èƒ½æŠŠå†…éƒ¨ summary/prompt æŠ•å½±åˆ°èŠå¤©åŒºã€‚
     content: "",
     zcodeTimeline: timeline,
   };
@@ -4515,8 +4545,8 @@ function mapSyntheticTimelinePartPayload(
     ...(inputId ? { inputId } : {}),
     ...(messageId ? { messageId } : {}),
     content: stringValue(part.text) ?? "",
-    // fork notice 是 part.upserted 里的结构化 synthetic text，不是模型正文 delta。
-    // 这里提前投成 timeline divider，避免 UI 按普通消息渲染后丢掉横线。
+    // fork notice æ˜¯ part.upserted é‡Œçš„ç»“æž„åŒ– synthetic textï¼Œä¸æ˜¯æ¨¡åž‹æ­£æ–‡ deltaã€‚
+    // è¿™é‡Œæå‰æŠ•æˆ timeline dividerï¼Œé¿å… UI æŒ‰æ™®é€šæ¶ˆæ¯æ¸²æŸ“åŽä¸¢æŽ‰æ¨ªçº¿ã€‚
     zcodeTimeline: timeline,
   };
 }
@@ -4649,9 +4679,9 @@ function mapToolUpdated(
   }
   if ("result" in payload) {
     const result = asRecord(payload.result);
-    // ZCode Protocol 的 ToolCallResult 只有 toolCallId/result，不再重复带 toolName。
-    // 去掉 ZCode Agent 后如果不记住前序 ToolCallScheduled 的 TodoWrite 名称，result 里的 todos
-    // 就只能当普通字符串输出，无法继续投射成顶部 todo/plan 事件。
+    // ZCode Protocol çš„ ToolCallResult åªæœ‰ toolCallId/resultï¼Œä¸å†é‡å¤å¸¦ toolNameã€‚
+    // åŽ»æŽ‰ ZCode Agent åŽå¦‚æžœä¸è®°ä½å‰åº ToolCallScheduled çš„ TodoWrite åç§°ï¼Œresult é‡Œçš„ todos
+    // å°±åªèƒ½å½“æ™®é€šå­—ç¬¦ä¸²è¾“å‡ºï¼Œæ— æ³•ç»§ç»­æŠ•å°„æˆé¡¶éƒ¨ todo/plan äº‹ä»¶ã€‚
     const toolName = rememberedToolName;
     const content = normalizeToolResultContent(toolName, result);
     const status = toolResultStatus(toolName, result);
@@ -4743,8 +4773,8 @@ function toolResultStatus(
     return "failed";
   }
   if (isBackgroundAgentLaunchResult(toolName, result)) {
-    // Agent 后台启动 ACK 只是子 agent 已创建，不代表子 agent 已完成；
-    // 投影成 completed 会让前端在真实 completion 前把 subagent 卡片误标为完成。
+    // Agent åŽå°å¯åŠ¨ ACK åªæ˜¯å­ agent å·²åˆ›å»ºï¼Œä¸ä»£è¡¨å­ agent å·²å®Œæˆï¼›
+    // æŠ•å½±æˆ completed ä¼šè®©å‰ç«¯åœ¨çœŸå®ž completion å‰æŠŠ subagent å¡ç‰‡è¯¯æ ‡ä¸ºå®Œæˆã€‚
     return "in_progress";
   }
   return "completed";
@@ -4777,8 +4807,8 @@ function isBackgroundAgentLaunchResult(
 }
 
 function isBackgroundAgentLaunchAcknowledgement(content: string): boolean {
-  // subagent async launch 的模型可见 ACK 从 backgroundTaskId/outputFile 文案迁到 output_file 文案；
-  // service projection 需要同时识别新旧格式，否则会把启动确认当成已完成结果发给 UI。
+  // subagent async launch çš„æ¨¡åž‹å¯è§ ACK ä»Ž backgroundTaskId/outputFile æ–‡æ¡ˆè¿åˆ° output_file æ–‡æ¡ˆï¼›
+  // service projection éœ€è¦åŒæ—¶è¯†åˆ«æ–°æ—§æ ¼å¼ï¼Œå¦åˆ™ä¼šæŠŠå¯åŠ¨ç¡®è®¤å½“æˆå·²å®Œæˆç»“æžœå‘ç»™ UIã€‚
   return (
     isLegacyBackgroundAgentLaunchAcknowledgement(content) ||
     isPreviousBackgroundAgentLaunchAcknowledgement(content) ||
@@ -4817,8 +4847,8 @@ function isSubagentDispatchToolName(toolName: string | undefined): boolean {
 }
 
 function parentToolUseIdFromToolPayload(payload: Record<string, unknown>): string | null {
-  // ZCode Protocol 发送的父级字段叫 parentToolCallId；
-  // UI stream 模型统一消费 parentToolUseId，必须在服务投影层完成一次性归一。
+  // ZCode Protocol å‘é€çš„çˆ¶çº§å­—æ®µå« parentToolCallIdï¼›
+  // UI stream æ¨¡åž‹ç»Ÿä¸€æ¶ˆè´¹ parentToolUseIdï¼Œå¿…é¡»åœ¨æœåŠ¡æŠ•å½±å±‚å®Œæˆä¸€æ¬¡æ€§å½’ä¸€ã€‚
   return stringValue(payload.parentToolUseId) ?? stringValue(payload.parentToolCallId) ?? null;
 }
 
@@ -4850,8 +4880,8 @@ function parseAgentActivityResultContent(
   if (!isAgentResult) {
     return null;
   }
-  // Agent 工具结果是 JSON 字符串，最终摘要在 content[].text；
-  // 服务层先转成 agent_activity，避免 UI 每条渲染路径都猜原始 JSON。
+  // Agent å·¥å…·ç»“æžœæ˜¯ JSON å­—ç¬¦ä¸²ï¼Œæœ€ç»ˆæ‘˜è¦åœ¨ content[].textï¼›
+  // æœåŠ¡å±‚å…ˆè½¬æˆ agent_activityï¼Œé¿å… UI æ¯æ¡æ¸²æŸ“è·¯å¾„éƒ½çŒœåŽŸå§‹ JSONã€‚
   const output = agentTextFromContentField(parsed.content);
   if (!output) {
     return null;
@@ -4957,9 +4987,9 @@ function userInputRequestToElicitationStreamEvent(
     ...(firstQuestion?.multiSelect ? { multiSelect: true } : {}),
     ...(questions.length > 0 ? { questions } : {}),
     ...(request.origin ? { origin: request.origin } : {}),
-    // ExitPlanMode 的 request 同时携带 schema 和 input；直接取 `schema ?? input`
-    // 会丢掉 input.plan，审批投影因而缺少正文。
-    // 这里只合入 plan，保持普通 elicitation 以及其他工具 input 的数据边界。
+    // ExitPlanMode çš„ request åŒæ—¶æºå¸¦ schema å’Œ inputï¼›ç›´æŽ¥å– `schema ?? input`
+    // ä¼šä¸¢æŽ‰ input.planï¼Œå®¡æ‰¹æŠ•å½±å› è€Œç¼ºå°‘æ­£æ–‡ã€‚
+    // è¿™é‡Œåªåˆå…¥ planï¼Œä¿æŒæ™®é€š elicitation ä»¥åŠå…¶ä»–å·¥å…· input çš„æ•°æ®è¾¹ç•Œã€‚
     schema: plan ? { ...requestSchema, plan } : (request.schema ?? request.input),
   };
 }
@@ -5041,8 +5071,8 @@ function pendingExitPlanModeToElicitationEvent(
     options: firstQuestion.options,
     questions,
     ...(permission.origin ? { origin: permission.origin } : {}),
-    // 计划审批投影必须展示本次 ExitPlanMode 对应的计划正文；
-    // 这里只定向投影 plan，避免把其他 permission input 泄漏到通用 elicitation schema。
+    // è®¡åˆ’å®¡æ‰¹æŠ•å½±å¿…é¡»å±•ç¤ºæœ¬æ¬¡ ExitPlanMode å¯¹åº”çš„è®¡åˆ’æ­£æ–‡ï¼›
+    // è¿™é‡Œåªå®šå‘æŠ•å½± planï¼Œé¿å…æŠŠå…¶ä»– permission input æ³„æ¼åˆ°é€šç”¨ elicitation schemaã€‚
     schema: {
       interaction: "plan_approval",
       toolName: permission.toolName,
@@ -5201,8 +5231,8 @@ function permissionResolvedPayloadToStreamEvents(
     return [permissionResponse];
   }
 
-  // Plan mode 等运行时拒绝会先发 permission.resolved，
-  // 但不一定有对应 tool.updated(error) 实时事件；只清权限请求会让已 started 的工具卡一直转。
+  // Plan mode ç­‰è¿è¡Œæ—¶æ‹’ç»ä¼šå…ˆå‘ permission.resolvedï¼Œ
+  // ä½†ä¸ä¸€å®šæœ‰å¯¹åº” tool.updated(error) å®žæ—¶äº‹ä»¶ï¼›åªæ¸…æƒé™è¯·æ±‚ä¼šè®©å·² started çš„å·¥å…·å¡ä¸€ç›´è½¬ã€‚
   return [
     permissionResponse,
     {
@@ -5232,8 +5262,8 @@ function mapSessionInfoLikePayload(
   cacheKey = taskId,
 ): ZCodeStreamEvent[] {
   const events: ZCodeStreamEvent[] = [];
-  // event.taskId 是对外 session id；内部 cache 必须沿用 workspace-aware taskKey，
-  // 否则 replayable snapshot seed 和后续 live update 会分裂成两份 background job 状态。
+  // event.taskId æ˜¯å¯¹å¤– session idï¼›å†…éƒ¨ cache å¿…é¡»æ²¿ç”¨ workspace-aware taskKeyï¼Œ
+  // å¦åˆ™ replayable snapshot seed å’ŒåŽç»­ live update ä¼šåˆ†è£‚æˆä¸¤ä»½ background job çŠ¶æ€ã€‚
   const backgroundTaskControlCacheKey = cacheKey;
   const tokenUsageDelta = taskTokenUsageDeltaFromPayload(
     taskId,
@@ -5354,8 +5384,8 @@ function taskTokenUsageDeltaFromPayload(
   }
   const querySource = stringValue(payload.querySource);
   const queryId = stringValue(payload.queryId);
-  // 累计 Token 要跟随每次模型完成实时更新，而不是等 task_complete 的整轮汇总；
-  // eventId 是 protocol 流的稳定单事件标识，用它去重可避免前后台 monitor 重复记账。
+  // ç´¯è®¡ Token è¦è·Ÿéšæ¯æ¬¡æ¨¡åž‹å®Œæˆå®žæ—¶æ›´æ–°ï¼Œè€Œä¸æ˜¯ç­‰ task_complete çš„æ•´è½®æ±‡æ€»ï¼›
+  // eventId æ˜¯ protocol æµçš„ç¨³å®šå•äº‹ä»¶æ ‡è¯†ï¼Œç”¨å®ƒåŽ»é‡å¯é¿å…å‰åŽå° monitor é‡å¤è®°è´¦ã€‚
   const eventKey =
     eventId ??
     `${traceId}:${inputId ?? "no-input"}:${queryId ?? "no-query"}:${querySource ?? "unknown"}:${usage.inputTokens}:` +
@@ -5415,8 +5445,8 @@ function recordAgentModelNetworkTelemetry(event: ZCodeSessionEvent): void {
   try {
     emitNetworkTelemetryObservation(observation);
   } catch (error) {
-    // 修复原因：agent 模型网络遥测属于旁路指标，sink 异常不能影响主会话消息流。
-    logger.warn(undefined, "上报 agent 模型网络遥测失败", error);
+    // ä¿®å¤åŽŸå› ï¼šagent æ¨¡åž‹ç½‘ç»œé¥æµ‹å±žäºŽæ—è·¯æŒ‡æ ‡ï¼Œsink å¼‚å¸¸ä¸èƒ½å½±å“ä¸»ä¼šè¯æ¶ˆæ¯æµã€‚
+    logger.warn(undefined, "ä¸ŠæŠ¥ agent æ¨¡åž‹ç½‘ç»œé¥æµ‹å¤±è´¥", error);
   }
 }
 
@@ -5428,8 +5458,8 @@ function agentModelNetworkObservationFromEvent(
   if (type !== "model_request_completed" && type !== "model_request_failed") {
     return null;
   }
-  // 修复原因：retryable failed 只是同一次逻辑请求的中间 attempt，最终 completed/failed 会带总 attempt。
-  // 如果这里也计数，会把成功率、失败率和重试率同时放大。
+  // ä¿®å¤åŽŸå› ï¼šretryable failed åªæ˜¯åŒä¸€æ¬¡é€»è¾‘è¯·æ±‚çš„ä¸­é—´ attemptï¼Œæœ€ç»ˆ completed/failed ä¼šå¸¦æ€» attemptã€‚
+  // å¦‚æžœè¿™é‡Œä¹Ÿè®¡æ•°ï¼Œä¼šæŠŠæˆåŠŸçŽ‡ã€å¤±è´¥çŽ‡å’Œé‡è¯•çŽ‡åŒæ—¶æ”¾å¤§ã€‚
   if (type === "model_request_failed" && booleanValue(payload.retryable) === true) {
     return null;
   }
@@ -5529,8 +5559,8 @@ function contextUsageFromRuntime(
   if (!runtimeUsage || runtimeUsage.size <= 0 || runtimeUsage.used <= 0) {
     return null;
   }
-  // session resume 时 protocol projection 可能还没重放主轮次 usage。
-  // runtime.contextUsage 来自持久化 assistant token 记录，应优先用于恢复旧 task UI。
+  // session resume æ—¶ protocol projection å¯èƒ½è¿˜æ²¡é‡æ”¾ä¸»è½®æ¬¡ usageã€‚
+  // runtime.contextUsage æ¥è‡ªæŒä¹…åŒ– assistant token è®°å½•ï¼Œåº”ä¼˜å…ˆç”¨äºŽæ¢å¤æ—§ task UIã€‚
   return {
     used: runtimeUsage.used,
     size: runtimeUsage.size,
@@ -5549,16 +5579,16 @@ function contextUsageFromPayload(payload: Record<string, unknown>): ContextUsage
   const modelUsageUsed = useModelUsageForContext ? contextUsageTokensFromPayload(usage) : undefined;
   const used =
     modelUsageUsed ??
-    // 主轮次模型返回 usage 时必须以真实网络 token 统计为准；
-    // context window 是 input + output 共享窗口，不能再只用 inputTokens 渲染 meter。
-    // projection.contextUsed 是 runtime 估算/恢复事实源，只在缺少 usage 时兜底。
+    // ä¸»è½®æ¬¡æ¨¡åž‹è¿”å›ž usage æ—¶å¿…é¡»ä»¥çœŸå®žç½‘ç»œ token ç»Ÿè®¡ä¸ºå‡†ï¼›
+    // context window æ˜¯ input + output å…±äº«çª—å£ï¼Œä¸èƒ½å†åªç”¨ inputTokens æ¸²æŸ“ meterã€‚
+    // projection.contextUsed æ˜¯ runtime ä¼°ç®—/æ¢å¤äº‹å®žæºï¼Œåªåœ¨ç¼ºå°‘ usage æ—¶å…œåº•ã€‚
     explicitUsed;
   if (size === undefined || size <= 0) {
     return null;
   }
-  // ZCode Protocol 的 session.updated 里 contextUsed/contextWindow 是 projection 事实源；
-  // 旧 task stream 只认识 usage_update，adapter 不转换就会让右下角 context meter 永远拿不到数据。
-  // used=0 只表示初始化或异常兜底，不能渲染成可用的 context meter。
+  // ZCode Protocol çš„ session.updated é‡Œ contextUsed/contextWindow æ˜¯ projection äº‹å®žæºï¼›
+  // æ—§ task stream åªè®¤è¯† usage_updateï¼Œadapter ä¸è½¬æ¢å°±ä¼šè®©å³ä¸‹è§’ context meter æ°¸è¿œæ‹¿ä¸åˆ°æ•°æ®ã€‚
+  // used=0 åªè¡¨ç¤ºåˆå§‹åŒ–æˆ–å¼‚å¸¸å…œåº•ï¼Œä¸èƒ½æ¸²æŸ“æˆå¯ç”¨çš„ context meterã€‚
   if (used === undefined || used <= 0) {
     return null;
   }
@@ -5581,8 +5611,8 @@ function optionalContextUsageBreakdownFromPayload(
 function contextUsageTokensFromPayload(usage: Record<string, unknown>): number | undefined {
   const inputTokens = positiveIntegerValue(usage.inputTokens ?? usage.input);
   if (inputTokens !== undefined) {
-    // AI SDK v6 已把 Anthropic cache read/write 并入 inputTokens。
-    // adapter 只需要加 output；再加 cacheReadTokens 会把输入栏 context meter 算大。
+    // AI SDK v6 å·²æŠŠ Anthropic cache read/write å¹¶å…¥ inputTokensã€‚
+    // adapter åªéœ€è¦åŠ  outputï¼›å†åŠ  cacheReadTokens ä¼šæŠŠè¾“å…¥æ  context meter ç®—å¤§ã€‚
     return inputTokens + (nonNegativeIntegerValue(usage.outputTokens ?? usage.output) ?? 0);
   }
 
@@ -5609,8 +5639,8 @@ function optionalContextCacheUsageFromPayload(
 
 function shouldUseModelUsageForContext(payload: Record<string, unknown>): boolean {
   const querySource = stringValue(payload.querySource);
-  // 只有主会话模型请求的 inputTokens 才代表当前可见上下文。
-  // 标题、压缩、prompt enhance 等 sidecar 请求即使带 contextWindow，也不能覆盖输入栏 context meter。
+  // åªæœ‰ä¸»ä¼šè¯æ¨¡åž‹è¯·æ±‚çš„ inputTokens æ‰ä»£è¡¨å½“å‰å¯è§ä¸Šä¸‹æ–‡ã€‚
+  // æ ‡é¢˜ã€åŽ‹ç¼©ã€prompt enhance ç­‰ sidecar è¯·æ±‚å³ä½¿å¸¦ contextWindowï¼Œä¹Ÿä¸èƒ½è¦†ç›–è¾“å…¥æ  context meterã€‚
   return querySource === undefined || querySource === "main_turn";
 }
 
@@ -5664,8 +5694,8 @@ function contextCacheUsageFromPayload(
         : inputTokens > 0
           ? cacheReadTokens / inputTokens
           : null,
-    // UI 展示的是 agent/app 协议返回的命中率；provider 没直接给时，
-    // 在 adapter 侧按 provider usage 归一化一次，避免各 UI 入口重复理解 token 字段。
+    // UI å±•ç¤ºçš„æ˜¯ agent/app åè®®è¿”å›žçš„å‘½ä¸­çŽ‡ï¼›provider æ²¡ç›´æŽ¥ç»™æ—¶ï¼Œ
+    // åœ¨ adapter ä¾§æŒ‰ provider usage å½’ä¸€åŒ–ä¸€æ¬¡ï¼Œé¿å…å„ UI å…¥å£é‡å¤ç†è§£ token å­—æ®µã€‚
     hitRate:
       explicitHitRate !== undefined
         ? Math.max(0, explicitHitRate)

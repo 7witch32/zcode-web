@@ -62,7 +62,9 @@ export const SHORTCUT_COMMANDS: readonly ShortcutCommandEntry[] = [
   {
     id: "openCommandCenter",
     channel: "window",
-    defaultBindings: ["CmdOrCtrl+k", "CmdOrCtrl+Shift+p"],
+    // Ctrl+Shift+P ต้องใช้ Ctrl จริง เพื่อให้ iPhone/iPad ที่ต่อคีย์บอร์ดภายนอกใช้งานได้
+    // (CmdOrCtrl จะตีความเป็น Command บน Apple platforms)
+    defaultBindings: ["CmdOrCtrl+k", "Ctrl+Shift+p"],
   },
   // 打开设置页：mac ⌘, / win·linux Ctrl+,（系统惯例，如 macOS Settings…、VSCode）
   { id: "openSettings", channel: "window", defaultBindings: ["CmdOrCtrl+,"] },

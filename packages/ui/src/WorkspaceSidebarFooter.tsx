@@ -26,6 +26,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu.js";
 import {
+  Command,
   PencilRuler,
   Globe,
   Loader2,
@@ -90,6 +91,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   onLocaleChange,
   onThemeChange,
   onSettingsButtonClick,
+  onOpenCommandCenter,
   onUsageClick,
   onUpgradeClick,
   onLogin,
@@ -108,6 +110,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
   onLocaleChange: (value: string) => void;
   onThemeChange: (value: string) => void;
   onSettingsButtonClick?: () => void;
+  onOpenCommandCenter?: () => void;
   onUsageClick?: () => void;
   onUpgradeClick?: Parameters<
     typeof WorkspaceSidebarFooterUsageSummaryContent
@@ -370,6 +373,18 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="flex shrink-0 items-center gap-1.5">
+          <ControlHintTooltip title="Command Center">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-lg"
+              aria-label="Command Center"
+              disabled={!onOpenCommandCenter}
+              onClick={onOpenCommandCenter}
+            >
+              <Command className="size-4" />
+            </Button>
+          </ControlHintTooltip>
           {isDesktop && workspacePath ? (
             <WorkspaceWebRemoteControlTrigger
               workspacePath={workspacePath}

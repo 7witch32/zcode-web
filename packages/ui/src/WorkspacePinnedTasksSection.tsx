@@ -113,6 +113,7 @@ export function WorkspacePinnedTasksSection({
   const { items: localItems } = useGlobalTaskList({
     kind: "pinned",
     workspaceTabs: scopedWorkspaceTabs,
+    includeAllWorkspaces: true,
     sortBy: taskSortBy,
     searchQuery: "",
     expanded: true,

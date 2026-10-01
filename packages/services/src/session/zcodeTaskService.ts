@@ -439,6 +439,7 @@ export interface IZCodeTaskService {
    */
   listGroupedTaskViewStructure(params: {
     workspaceScopes: ZCodeTaskListWorkspaceScope[];
+    includeAllWorkspaces?: boolean;
   }): Promise<ZCodeGroupedTaskViewStructure>;
 
   /** 一次性提交 grouped 视图最终排序和 membership，服务层用 sqlite transaction 落库 */

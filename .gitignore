@@ -69,3 +69,5 @@ packages/desktop/.e2e-artifacts/
 packages/desktop/.e2e-cache/
 packages/desktop/.e2e-network-capture/
 .zcode-runtime/
+# 本地运行时状态（如 server 默认 push-subscriptions 落盘、会话 plan），不属于源码。
+.zcode/

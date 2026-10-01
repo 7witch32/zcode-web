@@ -235,6 +235,7 @@ export * from "./off-peak-types.js";
 export * from "./background-task-control-merge.js";
 export * from "./background-task-controls.js";
 export * from "./background-task-notifications.js";
+export * from "./notification-events.js";
 export * from "./background-bash-jobs.js";
 export * from "./zcode-agent-model-state.js";
 export * from "./task-realtime.js";

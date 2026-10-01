@@ -83,12 +83,27 @@ export interface ZCodeTaskIndexTerminalEvent {
   target: ZCodeAgentSessionTarget;
   /** v4 phase 终态映射：completedSuccess/completedInterrupted → turn.completed；error → turn.failed。 */
   kind: "turn.completed" | "turn.failed";
+  /** 产品级终态结果：completedInterrupted 是权威的取消/停止状态，通知渠道用它区分成功与中止。 */
+  terminalOutcome: "completed" | "stopped" | "failed";
+  /** 本次终态迁移的稳定标识（sessionId+phase+lastActivityAt），下游通知渠道用同一 id 幂等去重。 */
+  transitionId: string;
+  /** 权威摘要里的安全标题；展示层可自行本地化状态文案。 */
+  title: string;
 }
 
 export interface ZCodeTaskIndexReadyEvent {
   target: ZCodeAgentSessionTarget;
   /** v4 phase 终态映射：agent 收口后可接受下一条输入的 ready 边界。 */
   reason: "prompt_completed" | "prompt_failed";
+}
+
+export interface ZCodeTaskIndexInteractionEvent {
+  target: ZCodeAgentSessionTarget;
+  interactionId: string;
+  kind: "permission" | "userInput";
+  toolName?: string;
+  transitionId: string;
+  title: string;
 }
 
 export interface ZCodeTaskIndexSyncer {
@@ -162,6 +177,14 @@ export interface ZCodeTaskIndexSyncer {
    * 这不是 UI stream，只给 host runtime command queue 等 services 内部状态收口使用。
    */
   onSessionTerminalEvent: Event<ZCodeTaskIndexTerminalEvent>;
+  /** 订阅需要用户交互（审批/回复）的 pending interaction 事件；web push 通知渠道消费。 */
+  onSessionInteractionEvent: Event<ZCodeTaskIndexInteractionEvent>;
+  /**
+   * 显式标记 session 为活跃。订阅建立晚于会话创建时，首个快照可能直接就是终态
+   * （previous === undefined），没有活跃标记会被当成冷恢复历史而漏发终态事件；
+   * web push 的"任务完成"通知依赖这个标记不漏发。
+   */
+  markSessionActive(target: ZCodeAgentSessionTarget): void;
   /**
    * 订阅会话收口后的 prompt ready 状态（phase 进入 completedSuccess/completedInterrupted/error）。
    * 手机 host command queue 只能以这个事件作为继续发送下一条的边界。
@@ -328,6 +351,10 @@ export function createZCodeTaskIndexSyncer(
   const GLOBAL_WORKSPACE_EVENT_SCOPE = "*";
   const terminalEventEmitter = new Emitter<ZCodeTaskIndexTerminalEvent>();
   const readyEventEmitter = new Emitter<ZCodeTaskIndexReadyEvent>();
+  // 按显式激活记录的活跃 session（workspace key → sessionIds）：
+  // processSummary 判定"首个快照即终态"是否算真实收口的依据。
+  const activeSessionsByWorkspaceKey = new Map<string, Set<string>>();
+  const interactionEventEmitter = new Emitter<ZCodeTaskIndexInteractionEvent>();
   let disposed = false;
 
   const indexTopicFor = (state: WorkspaceIngestState) =>
@@ -573,6 +600,11 @@ export function createZCodeTaskIndexSyncer(
     terminalEventEmitter.fire({
       target,
       kind: failed ? "turn.failed" : "turn.completed",
+      // terminalOutcome 区分成功/失败/中止；completedInterrupted 是权威的停止态。
+      terminalOutcome: failed ? "failed" : phase === "completedInterrupted" ? "stopped" : "completed",
+      // 稳定迁移标识，通知事件用同一 id 幂等去重。
+      transitionId: [summary.sessionId, phase, String(summary.lastActivityAt)].join(":"),
+      title: summary.title.trim() || "ZCode task",
     });
     readyEventEmitter.fire({
       target,
@@ -675,6 +707,14 @@ export function createZCodeTaskIndexSyncer(
       });
   }
 
+  /** 记录显式激活的 session；语义见 ZCodeTaskIndexSyncer.markSessionActive 注释。 */
+  function markSessionActive(target: ZCodeAgentSessionTarget): void {
+    const workspaceKey = resolveWorkspaceKey(target);
+    const sessions = activeSessionsByWorkspaceKey.get(workspaceKey) ?? new Set<string>();
+    sessions.add(target.sessionId);
+    activeSessionsByWorkspaceKey.set(workspaceKey, sessions);
+  }
+
   /** 单条 summary 对基线 diff：draft 跳过；terminal 迁移/标题变化各自收敛。 */
   function processSummary(
     state: WorkspaceIngestState,
@@ -692,14 +732,36 @@ export function createZCodeTaskIndexSyncer(
     // 终态迁移 = 基线里真实观察到非终态 → 终态。无基线的会话（冷恢复 hydration、
     // 断档降级后新出现的历史会话）不回放终态；活跃会话必先以 running/prewarming
     // 进入基线（gateway 每个事件都 fan-out），不会漏掉真实收口。
+    // 例外：markSessionActive 显式标记过的会话，首个快照即终态也算真实收口，
+    // 否则订阅晚于会话创建时（previous === undefined）会漏发 web push 完成通知。
+    const workspaceKey = resolveWorkspaceKey(state.target);
+    const activeSessions = activeSessionsByWorkspaceKey.get(workspaceKey);
+    const wasExplicitlyActive = activeSessions?.has(next.sessionId) ?? false;
     const becameTerminal =
-      previous !== undefined && !isTerminalPhase(previous.phase) && isTerminalPhase(next.phase);
+      (previous !== undefined && !isTerminalPhase(previous.phase) && isTerminalPhase(next.phase)) ||
+      (previous === undefined && wasExplicitlyActive && isTerminalPhase(next.phase));
     const runtimeStateChanged =
       becameVisibleTask ||
       previous === undefined ||
       previous.phase !== next.phase ||
       previous.pendingInteraction?.interactionId !== next.pendingInteraction?.interactionId ||
       previous.pendingInteraction?.kind !== next.pendingInteraction?.kind;
+    // 新的 pending interaction（审批/回复）到达且不是终态收口 → 发交互事件给通知渠道。
+    const becamePendingInteraction =
+      previous !== undefined &&
+      next.pendingInteraction !== undefined &&
+      next.pendingInteraction.interactionId !== previous.pendingInteraction?.interactionId;
+    const pendingInteraction = next.pendingInteraction;
+    if (becamePendingInteraction && !becameTerminal && pendingInteraction) {
+      interactionEventEmitter.fire({
+        target,
+        interactionId: pendingInteraction.interactionId,
+        kind: pendingInteraction.kind,
+        ...(pendingInteraction.toolName ? { toolName: pendingInteraction.toolName } : {}),
+        transitionId: `${next.sessionId}:interaction:${pendingInteraction.interactionId}`,
+        title: next.title.trim() || "ZCode task",
+      });
+    }
     if (runtimeStateChanged && !becameTerminal) {
       emitWorkspaceTaskListChanged(
         broadcastTargetFrom(target),
@@ -708,6 +770,9 @@ export function createZCodeTaskIndexSyncer(
       );
     }
     if (becameTerminal) {
+      // 终态已收口，清除活跃标记，避免同 id 快照再次被判定为显式激活。
+      activeSessions?.delete(next.sessionId);
+      if (activeSessions && activeSessions.size === 0) activeSessionsByWorkspaceKey.delete(workspaceKey);
       applyTerminalTransition(target, next, {
         moveGroupedTaskToTop: becameVisibleTask,
       });
@@ -1827,6 +1892,10 @@ export function createZCodeTaskIndexSyncer(
 
     onSessionTerminalEvent: terminalEventEmitter.event,
 
+    onSessionInteractionEvent: interactionEventEmitter.event,
+
+    markSessionActive,
+
     onSessionReadyEvent: readyEventEmitter.event,
 
     disposeAll(): void {
@@ -1859,9 +1928,11 @@ export function createZCodeTaskIndexSyncer(
       workspaceEmitters.clear();
       terminalEventEmitter.dispose();
       readyEventEmitter.dispose();
+      interactionEventEmitter.dispose();
       runtimeLifecycleDisposable?.dispose();
       runtimeRestartedDisposable?.dispose();
       availableRuntimeGenerationByWorkspaceKey.clear();
+      activeSessionsByWorkspaceKey.clear();
     },
   };
 }

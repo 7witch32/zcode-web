@@ -22,9 +22,14 @@ async function main(): Promise<void> {
   const host = process.env["ZCODE_SERVER_HOST"]?.trim() || process.env["HOST"]?.trim() || undefined;
   const staticRoot = process.env["ZCODE_WEB_STATIC_ROOT"]?.trim() || undefined;
   const authToken = process.env["ZCODE_SERVER_AUTH_TOKEN"]?.trim() || undefined;
+  // Historical sessions may reference a workspace directory that no longer exists.
+  // Keep Agent spawn alive by falling back to the persistent workspace mount.
+  const agentSpawnFallbackCwd =
+    process.env["ZCODE_AGENT_SPAWN_FALLBACK_CWD"]?.trim() || undefined;
   const services = createLocalServices({
     zcodeBuiltinProviderConfigFilePath,
     providerProvisioningTargetEnabled: Boolean(authToken),
+    ...(agentSpawnFallbackCwd ? { zcodeAgentSpawnFallbackCwd: agentSpawnFallbackCwd } : {}),
   });
 
   createHttpServer(services, port, {

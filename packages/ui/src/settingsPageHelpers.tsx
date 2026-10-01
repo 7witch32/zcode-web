@@ -10,6 +10,17 @@ import {
   TID_SETTINGS_NATIVE_SEARCH_SWITCH,
 } from "@zcode/shared";
 import { useState, useCallback, useEffect } from "react";
+import {
+  disableWebPushNotifications,
+  enableWebPushNotifications,
+  getCurrentWebPushDeviceId,
+  getWebPushPermission,
+  isWebPushSupported,
+  listWebPushDevices,
+  revokeWebPushDevice,
+  testWebPushNotification,
+  type WebPushDevice,
+} from "@/lib/webPushNotifications.js";
 import type { IPlatformService } from "@zcode/shared";
 import {
   TID_SETTINGS_LOCALE_SELECT_ITEM,
@@ -173,6 +184,77 @@ export function GeneralSectionContent({
 }) {
   const { intl } = useZCodeIntl();
   const hasServices = Boolean(useOptionalServices());
+  const [pushDevices, setPushDevices] = useState<WebPushDevice[]>([]);
+  const [pushBusy, setPushBusy] = useState(false);
+  const [pushError, setPushError] = useState<string | null>(null);
+  const [pushSuccess, setPushSuccess] = useState<string | null>(null);
+  const pushSupported = isWebPushSupported();
+  const pushPermission = getWebPushPermission();
+
+  useEffect(() => {
+    if (!pushSupported) return;
+    void listWebPushDevices()
+      .then(setPushDevices)
+      .catch(() => setPushDevices([]));
+  }, [pushSupported]);
+
+  const refreshPushDevices = useCallback(async () => {
+    const devices = await listWebPushDevices();
+    setPushDevices(devices);
+  }, []);
+
+  const handleEnablePush = useCallback(async () => {
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      await enableWebPushNotifications();
+      await refreshPushDevices();
+    } catch (error) {
+      setPushError(error instanceof Error ? error.message : "Unable to enable push notifications");
+    } finally {
+      setPushBusy(false);
+    }
+  }, [refreshPushDevices]);
+
+  const handleDisablePush = useCallback(async () => {
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      await disableWebPushNotifications();
+      await refreshPushDevices();
+    } catch (error) {
+      setPushError(error instanceof Error ? error.message : "Unable to disable push notifications");
+    } finally {
+      setPushBusy(false);
+    }
+  }, [refreshPushDevices]);
+
+  const handleTestPush = useCallback(async (deviceId?: string) => {
+    setPushBusy(true);
+    setPushError(null);
+    setPushSuccess(null);
+    try {
+      await testWebPushNotification(deviceId);
+      setPushSuccess("Push test request accepted by the server.");
+    } catch (error) {
+      setPushError(error instanceof Error ? error.message : "Push test failed");
+    } finally {
+      setPushBusy(false);
+    }
+  }, []);
+
+  const handleRevokePushDevice = useCallback(async (deviceId: string) => {
+    setPushBusy(true);
+    setPushError(null);
+    try {
+      await revokeWebPushDevice(deviceId);
+      await refreshPushDevices();
+    } catch (error) {
+      setPushError(error instanceof Error ? error.message : "Unable to revoke push device");
+    } finally {
+      setPushBusy(false);
+    }
+  }, [refreshPushDevices]);
   // 部分 SSR 单测会用精简 props 直接渲染本组件，新增终端设置项后旧 helper 未必同步传值。
   // 这里把运行时缺省值兜到“继承系统 profile”，避免 undefined.trim() 把无关测试打断。
   const [localTerminalFontFamily, setLocalTerminalFontFamily] = useState(terminalFontFamily);
@@ -632,6 +714,96 @@ export function GeneralSectionContent({
             />
           }
         />
+        {!isDesktop ? (
+          <SettingsRow
+            label={intl.formatMessage({ id: "settings.pushNotifications" })}
+            description={intl.formatMessage({
+              id: "settings.pushNotificationsDescription",
+            })}
+            control={
+              pushSupported ? (
+                pushDevices.length > 0 ? (
+                  <div className="flex items-center gap-2">
+                    <Button type="button" size="lg" disabled={pushBusy} onClick={() => void handleTestPush()}>
+                      {intl.formatMessage({ id: "settings.pushNotificationsTest" })}
+                    </Button>
+                    <Button
+                      type="button"
+                      size="lg"
+                      variant="outline"
+                      disabled={pushBusy}
+                      onClick={() => void handleDisablePush()}
+                    >
+                      {intl.formatMessage({ id: "settings.pushNotificationsDisable" })}
+                    </Button>
+                  </div>
+                ) : (
+                  <Button type="button" size="lg" disabled={pushBusy} onClick={() => void handleEnablePush()}>
+                    {intl.formatMessage({ id: "settings.pushNotificationsEnable" })}
+                  </Button>
+                )
+              ) : (
+                <SettingsBadge>{intl.formatMessage({ id: "settings.pushNotificationsUnsupported" })}</SettingsBadge>
+              )
+            }
+            detail={
+              <div className="space-y-2">
+                {pushDevices.map((device) => (
+                  <div key={device.deviceId} className="space-y-1">
+                    <div className="flex items-center justify-between gap-3 text-ui-sm">
+                      <span className="text-foreground-subtle">
+                        {device.deviceName ||
+                          intl.formatMessage({ id: "settings.pushNotificationsDevice" }, { id: device.deviceId.slice(0, 8) })}
+                      </span>
+                      {/* 本机 device 的操作在上方的 Test/Disable 按钮里；这里只给"其他设备"
+                          留 Revoke（清理旧安装的残留注册），避免同一操作出现两排按钮。 */}
+                      {device.deviceId !== getCurrentWebPushDeviceId() ? (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="outline"
+                          disabled={pushBusy}
+                          onClick={() => void handleRevokePushDevice(device.deviceId)}
+                        >
+                          {intl.formatMessage({ id: "settings.pushNotificationsDisable" })}
+                        </Button>
+                      ) : null}
+                    </div>
+                    {/* SW 诊断回执：server transport 成功不代表设备端显示成功，
+                        用它区分"没收到 push"与"收到但渲染失败"。 */}
+                    {device.lastDiagnosticStage ? (
+                      <div className="text-ui-xs text-foreground-subtle">
+                        {intl.formatMessage(
+                          { id: "settings.pushNotificationsLastReport" },
+                          {
+                            stage: device.lastDiagnosticStage,
+                            time: device.lastDiagnosticAt
+                              ? new Date(device.lastDiagnosticAt).toLocaleString()
+                              : "",
+                          },
+                        )}
+                      </div>
+                    ) : (
+                      <div className="text-ui-xs text-foreground-subtle">
+                        {intl.formatMessage({ id: "settings.pushNotificationsNoReport" })}
+                      </div>
+                    )}
+                    {device.lastDiagnosticDetail && device.lastDiagnosticStage !== "notification_shown" ? (
+                      <div className="text-ui-xs text-foreground-subtle">{device.lastDiagnosticDetail}</div>
+                    ) : null}
+                  </div>
+                ))}
+                {pushError ? <div className="text-ui-sm text-danger">{pushError}</div> : null}
+                {pushSuccess ? <div className="text-ui-sm text-success">{pushSuccess}</div> : null}
+                {!pushError && !pushSuccess && pushSupported && pushPermission !== "granted" ? (
+                  <div className="text-ui-sm text-foreground-subtle">
+                    {intl.formatMessage({ id: "settings.pushNotificationsPermissionHint" })}
+                  </div>
+                ) : null}
+              </div>
+            }
+          />
+        ) : null}
         {isWindowsDesktop ? (
           <SettingsRow
             label={intl.formatMessage({ id: "settings.closeToTrayOnWindows" })}

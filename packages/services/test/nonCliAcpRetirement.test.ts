@@ -10,16 +10,16 @@ import {
   ZCODE_PROTOCOL_VERSION,
   zcodeSessionStateSnapshotSchema,
 } from "@zcode/shared";
-import { TaskIndexRepo } from "../src/session/taskIndexRepo.js";
-import { createZCodeTaskServiceAdapter } from "../src/zcode-agent/zcodeTaskServiceAdapter.js";
+import { TaskIndexRepo } from "../src/session/taskIndexRepo.ts";
+import { createZCodeTaskServiceAdapter } from "../src/zcode-agent/zcodeTaskServiceAdapter.ts";
 import {
   getLegacyTaskSessionSnapshotPath,
   getZCodeDataRootDir,
   setDataBaseDir,
-} from "../src/paths.js";
-import { createMemoryService } from "../src/memory/memoryService.js";
-import { parseLegacyTaskSessionFile } from "../src/session/legacyTaskSessionFile.js";
-import { createProviderConfigRuntime } from "../src/model-provider/providerConfigRuntime.js";
+} from "../src/paths.ts";
+import { createMemoryService } from "../src/memory/memoryService.ts";
+import { parseLegacyTaskSessionFile } from "../src/session/legacyTaskSessionFile.ts";
+import { createProviderConfigRuntime } from "../src/model-provider/providerConfigRuntime.ts";
 
 const meta = {
   taskId: "wrapper-example",

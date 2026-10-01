@@ -13,7 +13,8 @@
     "build": "tsup && pnpm run build:remote",
     "build:remote": "tsx build-remote.ts",
     "lint": "oxlint",
-    "lint:fix": "oxlint --fix"
+    "lint:fix": "oxlint --fix",
+    "test": "node --import tsx --test \"test/*.test.ts\""
   },
   "dependencies": {
     "@hono/node-server": "^1.19.11",
@@ -36,6 +37,7 @@
     "proxy-from-env": "^1.1.0",
     "ssh2": "^1.17.0",
     "undici": "^6.24.1",
+    "web-push": "3.6.7",
     "ws": "^8.20.0",
     "yaml": "^2.9.0",
     "yauzl": "^3.3.0",
@@ -44,6 +46,7 @@
   "devDependencies": {
     "@types/node": "^25.5.0",
     "@types/ssh2": "^1.15.5",
+    "@types/web-push": "3.6.4",
     "@types/ws": "^8.18.1",
     "esbuild": "^0.25.0",
     "tsup": "^8.4.0",

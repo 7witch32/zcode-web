@@ -2214,6 +2214,18 @@ const enUS: Record<string, string> = {
   "settings.notificationSound": "Notification sound",
   "settings.notificationSoundDescription":
     "When notifications are enabled, you can mute the task notification sound separately.",
+  "settings.pushNotifications": "Push notifications",
+  "settings.pushNotificationsDescription":
+    "Receive task notifications on iPhone or iPad even when the Web UI is closed. On iOS/iPadOS, add ZCode to the Home Screen first.",
+  "settings.pushNotificationsEnable": "Enable push",
+  "settings.pushNotificationsDisable": "Disable push",
+  "settings.pushNotificationsTest": "Test push",
+  "settings.pushNotificationsDevice": "Device {id}",
+  "settings.pushNotificationsUnsupported": "Not supported here",
+  "settings.pushNotificationsLastReport": "Last device report: {stage} · {time}",
+  "settings.pushNotificationsNoReport": "No device report yet — press Test push and check here.",
+  "settings.pushNotificationsPermissionHint":
+    "Allow notifications when prompted. iPhone and iPad require the Home Screen web app.",
   "notification.taskWithTitle": "Task: {title}",
   "notification.taskWaiting": "Task waiting for your confirmation",
   "notification.completed": "Task completed",

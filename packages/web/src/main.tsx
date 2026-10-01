@@ -1,5 +1,6 @@
 /* eslint-disable max-lines -- Web 入口集中编排启动、路由与 workspace shell wiring，与 Root.tsx 同样先保持入口收口，避免跨层状态拆散。 */
 import { createRoot } from "react-dom/client";
+import { useEffect, useState } from "react";
 import {
   AppErrorBoundary,
   Root,
@@ -72,6 +73,21 @@ async function resolveFeedbackUrl(): Promise<string | undefined> {
 
 const root = createRoot(document.getElementById("root")!);
 const webAuthService = createWebAuthService();
+
+function registerPushServiceWorker(): void {
+  if (!("serviceWorker" in navigator) || !window.isSecureContext) {
+    return;
+  }
+  // updateViaCache: "none" 修复依据（2026-10-01 push 排查）：配合服务端 no-cache，
+  // 避免 SW 更新检查命中 HTTP 缓存导致设备长期运行旧版 sw.js（旧 worker 会静默丢弃 push）。
+  void navigator.serviceWorker
+    .register("/sw.js", { scope: "/", updateViaCache: "none" })
+    .catch((error) => {
+      console.warn("[push] service worker registration failed", error);
+    });
+}
+
+registerPushServiceWorker();
 
 // 初始化 Web 端流式 clientId，确保所有 hook 在首次渲染前就使用稳定 ID
 {
@@ -388,6 +404,101 @@ async function resolveWebBootstrap(): Promise<WebBootstrapResult> {
   }
 }
 
+function WebServerAuthScreen({ onAuthenticated }: { onAuthenticated: () => void }) {
+  const [token, setToken] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function submit(value: string) {
+    if (!value || submitting) {
+      return;
+    }
+    setSubmitting(true);
+    setError("");
+    try {
+      const response = await fetch("/auth/bootstrap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: value }),
+      });
+      if (!response.ok) {
+        setError(response.status === 401 ? "Invalid server token." : "Authentication failed. Please try again.");
+        return;
+      }
+      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      onAuthenticated();
+    } catch {
+      setError("Unable to reach the server. Please check the connection and try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  // 兼容旧的 ?token= 入口（server 端 hasValidLiteToken 仍支持 query token）：
+  // 带 token 打开页面时自动完成认证并清除 URL 中的 token，不再强迫用户重新手输。
+  useEffect(() => {
+    const queryToken = new URLSearchParams(window.location.search).get("token")?.trim();
+    if (queryToken) {
+      setToken(queryToken);
+      void submit(queryToken);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- 只需在挂载时执行一次
+  }, []);
+
+  return (
+    <div className="h-dvh min-h-dvh w-screen bg-background text-foreground">
+      <div className="mx-auto flex h-full w-full max-w-md items-center px-4">
+        <section className="w-full rounded-xl border border-card-border bg-card p-6 shadow-sm">
+          <h1 className="text-base font-semibold">Server Authentication</h1>
+          <p className="mt-2 text-ui-xs/relaxed text-foreground-subtle">
+            Enter the server token to connect to this ZCode server. The token is stored only as a secure browser cookie.
+          </p>
+          <label className="mt-5 block text-ui-xs font-medium" htmlFor="zcode-server-token">
+            Server Token
+          </label>
+          <input
+            id="zcode-server-token"
+            type="password"
+            autoComplete="current-password"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                void submit(token);
+              }
+            }}
+            className="mt-2 w-full rounded-lg border border-border bg-surface px-3 py-2 outline-none focus:border-primary"
+            style={{ fontSize: "16px" }}
+            placeholder="Paste server token"
+            autoFocus
+          />
+          {error ? <p className="mt-2 text-ui-xs text-destructive">{error}</p> : null}
+          <button
+            type="button"
+            disabled={!token.trim() || submitting}
+            onClick={() => void submit(token)}
+            className="mt-4 w-full rounded-lg bg-primary px-3 py-2 text-ui-xs font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting ? "Connecting…" : "Connect"}
+          </button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+async function ensureWebServerAuthenticated(): Promise<boolean> {
+  try {
+    const response = await fetch("/api/server-info", { cache: "no-store" });
+    if (response.status !== 401) {
+      return true;
+    }
+    return false;
+  } catch {
+    return true;
+  }
+}
+
 function WebBootstrapErrorScreen({ message }: { message: string }) {
   return (
     <div className="h-dvh min-h-dvh w-screen bg-background text-foreground">
@@ -431,6 +542,18 @@ async function bootstrapWebApp() {
 
   if (isConversationSharePath(window.location.pathname)) {
     await renderConversationSharePage();
+    return;
+  }
+
+  const authenticated = await ensureWebServerAuthenticated();
+  if (!authenticated) {
+    root.render(
+      <WebServerAuthScreen
+        onAuthenticated={() => {
+          void bootstrapWebApp();
+        }}
+      />,
+    );
     return;
   }
 

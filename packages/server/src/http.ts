@@ -1,5 +1,5 @@
 /* eslint-disable max-lines -- HTTP、WebSocket 与静态资源路由集中注册，保持同一鉴权顺序。 */
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile, stat } from "node:fs/promises";
 import { basename, extname, relative, resolve, sep } from "node:path";
 import { hostname } from "node:os";
@@ -40,6 +40,11 @@ import {
 } from "@zcode/shared";
 import { connectRemote, createRemoteBackend, type RemoteConnection } from "./remote/index.js";
 import { createHostCapabilityStore } from "./hostCapability.js";
+import {
+  createWebPushService,
+  parsePushDiagnosticInput,
+  parsePushSubscriptionInput,
+} from "./push/webPushService.js";
 
 function wrapWebSocket(ws: WebSocket): ISocket {
   const onData = new Emitter<VSBuffer>();
@@ -127,6 +132,20 @@ function setupChannelServer(
 /** 存储 web 模式下的远程连接，key 为随机 ID */
 const remoteConnections = new Map<string, RemoteConnection>();
 
+// /auth/bootstrap 是唯一的无鉴权可写端点：按 IP 记录失败次数，超限后临时拉黑，
+// 防止对 ZCODE_SERVER_AUTH_TOKEN 的无限在线暴力尝试（配合下方 tokensMatch 的常量时间比较）。
+const authFailureByIp = new Map<string, { count: number; blockedUntil: number }>();
+const AUTH_MAX_FAILURES = 10;
+const AUTH_BLOCK_DURATION_MS = 60_000;
+
+function clientIpOf(c: Context): string {
+  // ใช้ socket IP จริงเท่านั้น ห้ามพึ่ง X-Forwarded-For — การเชื่อมต่อตรงเข้า port 3030
+  // สามารถปลอม XFF ได้ ทำให้หมุน IP หลอก bypass limiter ได้ทุกครั้ง
+  // (กรณีหลัง reverse proxy ทุก client จะรวม bucket เดียว ล็อกกันได้ชั่วคราว 60s — ยอมรับได้)
+  const incoming = (c.env as { incoming?: { socket?: { remoteAddress?: string } } }).incoming;
+  return incoming?.socket?.remoteAddress || "local";
+}
+
 function generateId(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36);
 }
@@ -200,6 +219,9 @@ const staticMimeTypes: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".txt": "text/plain; charset=utf-8",
   ".wasm": "application/wasm",
+  // PWA manifest 必须用 application/manifest+json，缺省 octet-stream 会被 Safari 拒收，
+  // 导致 Home Screen web app 失去 Web Push 资格。
+  ".webmanifest": "application/manifest+json",
   ".webp": "image/webp",
   ".woff": "font/woff",
   ".woff2": "font/woff2",
@@ -226,17 +248,43 @@ function parseCookieHeader(header: string | undefined): Map<string, string> {
 
 function hasValidLiteToken(c: Context, token: string): boolean {
   const url = new URL(c.req.url);
-  if (url.searchParams.get("token") === token) {
-    c.header(
-      "Set-Cookie",
-      `${zcodeLiteTokenCookieName}=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax`,
-    );
+  if (tokensMatch(url.searchParams.get("token") ?? "", token)) {
+    c.header("Set-Cookie", buildLiteTokenCookie(c, token));
     return true;
   }
-  return parseCookieHeader(c.req.header("cookie")).get(zcodeLiteTokenCookieName) === token;
+  return tokensMatch(
+    parseCookieHeader(c.req.header("cookie")).get(zcodeLiteTokenCookieName) ?? "",
+    token,
+  );
+}
+
+// 修复依据（2026-10-01 review）：此前 cookie 固定携带 Secure，纯 HTTP LAN 部署
+// （docker-compose 发布 0.0.0.0:3030）下浏览器会拒绝存储该 cookie，认证流程死循环。
+// Secure 只应在 HTTPS 请求上设置；HTTPS 判定优先取反代头 X-Forwarded-Proto。
+function isHttpsRequest(c: Context): boolean {
+  const forwardedProto = c.req.header("x-forwarded-proto")?.split(",")[0]?.trim().toLowerCase();
+  if (forwardedProto) return forwardedProto === "https";
+  return new URL(c.req.url).protocol === "https:";
+}
+
+function buildLiteTokenCookie(c: Context, token: string): string {
+  const attributes = ["Path=/", "Max-Age=31536000", "HttpOnly"];
+  if (isHttpsRequest(c)) attributes.push("Secure");
+  attributes.push("SameSite=Lax");
+  return `${zcodeLiteTokenCookieName}=${encodeURIComponent(token)}; ${attributes.join("; ")}`;
+}
+
+function tokensMatch(submitted: string, expected: string): boolean {
+  // timingSafeEqual 要求等长输入；先各自哈希再比较，同时避免长度与字节时序泄漏。
+  const submittedHash = createHash("sha256").update(submitted).digest();
+  const expectedHash = createHash("sha256").update(expected).digest();
+  return timingSafeEqual(submittedHash, expectedHash);
 }
 
 function isTokenProtectedPath(pathname: string): boolean {
+  if (pathname === "/auth/bootstrap") {
+    return false;
+  }
   return pathname === "/ws" || pathname.startsWith("/ws/") || pathname.startsWith("/api/");
 }
 
@@ -309,15 +357,129 @@ export function createHttpServer(
     app.use("*", async (c, next) => {
       const pathname = new URL(c.req.url).pathname;
       const validToken = hasValidLiteToken(c, authToken);
-      if (!isTokenProtectedPath(pathname) || validToken) {
+      if (validToken || !isTokenProtectedPath(pathname)) {
         await next();
         return;
       }
       return c.json({ error: "Unauthorized" }, 401);
     });
+  } else {
+    // 无 token 时除静态文件外全部开放（/ws、/api、远程连接）。Docker 部署把端口发布到
+    // 0.0.0.0，必须在启动日志里明确暴露这一默认姿势，避免误以为服务有鉴权保护。
+    log(
+      "WARNING: no auth token configured (ZCODE_SERVER_AUTH_TOKEN) — API and WebSocket are open to anyone who can reach this port",
+    );
   }
 
+  app.post("/auth/bootstrap", async (c) => {
+    if (!authToken) {
+      return c.json({ authenticated: true, authenticationRequired: false });
+    }
+    const ip = clientIpOf(c);
+    const failureState = authFailureByIp.get(ip);
+    if (failureState && failureState.blockedUntil > Date.now()) {
+      return c.json({ error: "Too many failed attempts. Try again later." }, 429);
+    }
+    let body: unknown;
+    try {
+      body = await c.req.json();
+    } catch {
+      return c.json({ error: "Invalid request body" }, 400);
+    }
+    const submittedToken =
+      typeof body === "object" &&
+      body !== null &&
+      "token" in body &&
+      typeof body.token === "string"
+        ? body.token.trim()
+        : "";
+    if (!submittedToken || !tokensMatch(submittedToken, authToken)) {
+      const state = authFailureByIp.get(ip) ?? { count: 0, blockedUntil: 0 };
+      state.count += 1;
+      if (state.count >= AUTH_MAX_FAILURES) {
+        state.blockedUntil = Date.now() + AUTH_BLOCK_DURATION_MS;
+        state.count = 0;
+      }
+      authFailureByIp.set(ip, state);
+      if (authFailureByIp.size > 1024) {
+        const now = Date.now();
+        for (const [key, value] of authFailureByIp) {
+          if (value.blockedUntil <= now) authFailureByIp.delete(key);
+        }
+      }
+      return c.json({ error: "Invalid server token" }, 401);
+    }
+    authFailureByIp.delete(ip);
+    c.header("Set-Cookie", buildLiteTokenCookie(c, authToken));
+    return c.json({ authenticated: true, authenticationRequired: true });
+  });
+
   app.get("/api/server-info", (c) => c.json(createServerInfo(options)));
+
+  const webPushService = createWebPushService();
+  if (!authToken) {
+    app.use("/api/push/*", async (c, _next) =>
+      c.json({ error: "Push registration requires server authentication" }, 503),
+    );
+  }
+  app.get("/api/push/config", (c) => c.json(webPushService.config()));
+  app.get("/api/push/devices", async (c) => c.json({ devices: await webPushService.listDevices() }));
+  app.post("/api/push/devices", async (c) => {
+    try {
+      const input = parsePushSubscriptionInput(await c.req.json());
+      const result = await webPushService.registerDevice(input);
+      return c.json(result, 201);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid push subscription";
+      return c.json({ error: message }, 400);
+    }
+  });
+  app.delete("/api/push/devices/:deviceId", async (c) => {
+    const deviceId = c.req.param("deviceId");
+    return c.json({ revoked: await webPushService.revokeDevice(deviceId) });
+  });
+  // Service Worker 诊断回调（2026-10-01 push 排查）：设备侧 push 生命周期只有这里能看到，
+  // server transport 成功不代表设备显示成功。与 /api/push/* 共用 token 鉴权与 503 保护。
+  app.post("/api/push/diagnostic", async (c) => {
+    try {
+      const input = parsePushDiagnosticInput(await c.req.json());
+      const known = await webPushService.recordDeviceDiagnostic(input.deviceId, input.stage, input.detail);
+      return c.json({ ok: true, known });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Invalid push diagnostic";
+      return c.json({ error: message }, 400);
+    }
+  });
+  app.post("/api/push/test", async (c) => {
+    try {
+      const body = await c.req.json().catch(() => ({}));
+      const deviceId =
+        typeof body === "object" && body !== null && "deviceId" in body && typeof body.deviceId === "string"
+          ? body.deviceId
+          : undefined;
+      await webPushService.testDevice(deviceId);
+      return c.json({ ok: true });
+    } catch (error) {
+      const statusCode =
+        typeof error === "object" && error !== null && "statusCode" in error
+          ? Number((error as { statusCode?: unknown }).statusCode)
+          : undefined;
+      const body =
+        typeof error === "object" && error !== null && "body" in error
+          ? (error as { body?: unknown }).body
+          : undefined;
+      const message =
+        statusCode && Number.isFinite(statusCode)
+          ? typeof body === "string" && body.trim()
+            ? `Push service rejected the request (HTTP ${statusCode}): ${body.trim().slice(0, 500)}`
+            : `Push service rejected the request (HTTP ${statusCode})`
+          : error instanceof Error
+            ? error.message
+            : "Push test failed";
+      return c.json({ error: message }, 503);
+    }
+  });
+
   app.post("/api/rpc-host-capability", (c) => c.json(hostCapabilities.issue()));
 
   // 普通 `/ws` 永远是 terminal-client；浏览器/任意客户端设置旧 mode header
@@ -448,6 +610,14 @@ export function createHttpServer(
 
   if (options.staticRoot?.trim()) {
     const staticRoot = options.staticRoot.trim();
+    // sw.js 与 manifest 修复依据（2026-10-01 push 排查）：此前除 index.html 外全部返回
+    // `max-age=31536000, immutable`，iOS Home Screen app 的 SW 更新检查会命中 HTTP 缓存长达一年，
+    // 设备因此一直运行旧版 sw.js，推送"服务端发送成功但设备端无任何日志"。SW 脚本必须每次向源站确认新鲜度，
+    // manifest 同理（Add to Home Screen 时读取）。
+    const noCacheStatic = (filePath: string): boolean =>
+      filePath.endsWith("index.html") ||
+      filePath.endsWith("sw.js") ||
+      filePath.endsWith(".webmanifest");
     app.get("*", async (c) => {
       const pathname = new URL(c.req.url).pathname;
       const filePath = await resolveStaticFile(staticRoot, pathname, options.spaFallback ?? true);
@@ -455,9 +625,7 @@ export function createHttpServer(
         return c.notFound();
       }
       return c.body(await readFile(filePath), 200, {
-        "Cache-Control": filePath.endsWith("index.html")
-          ? "no-cache"
-          : "public, max-age=31536000, immutable",
+        "Cache-Control": noCacheStatic(filePath) ? "no-cache" : "public, max-age=31536000, immutable",
         "Content-Type": staticContentType(filePath),
       });
     });
@@ -471,6 +639,10 @@ export function createHttpServer(
   });
 
   injectWebSocket(server);
+
+  // 服务器关闭时释放通知订阅（webPushService 挂在进程级 notification bus 上），
+  // 避免重复 createHttpServer（测试/热重载）时监听器残留。
+  server.on("close", () => webPushService.dispose());
 
   return server;
 }

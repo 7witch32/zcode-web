@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { createProviderConfigRuntime } from "../src/model-provider/providerConfigRuntime.js";
-import { readLegacyZCodeConfigProviders } from "../src/model-provider/legacyZCodeConfigProviderReader.js";
-import { getAppConfigDir, setDataBaseDir } from "../src/paths.js";
+import { createProviderConfigRuntime } from "../src/model-provider/providerConfigRuntime.ts";
+import { readLegacyZCodeConfigProviders } from "../src/model-provider/legacyZCodeConfigProviderReader.ts";
+import { getAppConfigDir, setDataBaseDir } from "../src/paths.ts";
 
 const legacyConfig = {
   provider: {

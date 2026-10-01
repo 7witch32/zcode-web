@@ -18,8 +18,16 @@ services:
       ZCODE_SESSION_DB_PATH: "/data/.zcode/cli/db/db.sqlite"
       ZCODE_WEB_STATIC_ROOT: "/app/web-dist"
       ZCODE_SERVER_AUTH_TOKEN: "${ZCODE_SERVER_AUTH_TOKEN:-}"
+      ZCODE_PUSH_ENABLED: "${ZCODE_PUSH_ENABLED:-false}"
+      ZCODE_PUSH_VAPID_PUBLIC_KEY: "${ZCODE_PUSH_VAPID_PUBLIC_KEY:-}"
+      ZCODE_PUSH_VAPID_PRIVATE_KEY: "${ZCODE_PUSH_VAPID_PRIVATE_KEY:-}"
+      ZCODE_PUSH_VAPID_SUBJECT: "${ZCODE_PUSH_VAPID_SUBJECT:-}"
+      ZCODE_PUSH_SUBSCRIPTIONS_PATH: "${ZCODE_PUSH_SUBSCRIPTIONS_PATH:-/data/.zcode/push-subscriptions.json}"
       # Docker CLI/API access is restricted to the internal socket proxy network.
       DOCKER_HOST: "tcp://docker-api-proxy:2375"
+      # Historical sessions may reference a workspace directory that no longer exists.
+      # Keep Agent spawn alive by falling back to the persistent workspace mount.
+      ZCODE_AGENT_SPAWN_FALLBACK_CWD: "/workspace"
     networks:
       - default
       - docker-control

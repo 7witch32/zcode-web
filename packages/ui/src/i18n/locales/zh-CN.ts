@@ -2079,6 +2079,18 @@ const zhCN: Record<string, string> = {
   "settings.notificationDescription": "任务完成、失败或需要确认时发送桌面通知。",
   "settings.notificationSound": "通知声音",
   "settings.notificationSoundDescription": "通知开启后，可单独关闭任务通知提示音。",
+  "settings.pushNotifications": "推送通知",
+  "settings.pushNotificationsDescription":
+    "即使 Web 界面关闭，也能在 iPhone 或 iPad 上收到任务通知。iOS/iPadOS 需要先将 ZCode 添加到主屏幕。",
+  "settings.pushNotificationsEnable": "启用推送",
+  "settings.pushNotificationsDisable": "关闭推送",
+  "settings.pushNotificationsTest": "测试推送",
+  "settings.pushNotificationsDevice": "设备 {id}",
+  "settings.pushNotificationsUnsupported": "当前环境不支持",
+  "settings.pushNotificationsLastReport": "设备最近上报：{stage} · {time}",
+  "settings.pushNotificationsNoReport": "尚无设备上报，测试推送后在此查看。",
+  "settings.pushNotificationsPermissionHint":
+    "请在系统提示时允许通知。iPhone 和 iPad 需要使用主屏幕 Web App。",
   "notification.taskWithTitle": "任务：{title}",
   "notification.taskWaiting": "任务等待你的确认",
   "notification.completed": "任务已完成",

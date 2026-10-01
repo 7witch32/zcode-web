@@ -349,6 +349,7 @@ import { resolveZCodeAgentPresentationSurface } from "./zcode-agent/zcodeAgentPr
 import { createZCodeTaskServiceAdapter } from "./zcode-agent/zcodeTaskServiceAdapter.js";
 import { createZCodeSessionService } from "./zcode-session/zcodeSessionService.js";
 import { createZCodeTaskIndexSyncer } from "./zcode-agent/zcodeTaskIndexSyncer.js";
+import { createNotificationEventService } from "./notifications/notificationEventService.js";
 import { TaskIndexRepo } from "./session/taskIndexRepo.js";
 import { createBotsService } from "./bots/botsService.js";
 import { createBotRemoteWorkspaceService } from "./bots/botRemoteWorkspaceBridge.js";
@@ -2281,6 +2282,9 @@ export function createLocalServices(options: {
     agentService: zcodeAgentService,
     taskIndexRepo,
   });
+  // Notification events are produced from the same authoritative task-index boundary,
+  // not from renderer observation. Delivery is attached later by the Web Push server channel.
+  createNotificationEventService(zcodeTaskIndexSyncer);
   // The plugin can be toggled at runtime. Do not let a previously created resolver continue
   // health-checking/restarting Helper after disable, and create it lazily after enable.
   // 动态 resolver：isPluginEnabled 与 helper 创建用同一个 isCuaEnabledForContext 门控（dev mode 一致），

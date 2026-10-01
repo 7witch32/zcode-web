@@ -9,10 +9,10 @@ import {
   zcodeSessionStateSnapshotSchema,
   type ZCodeSessionStateSnapshot,
 } from "@zcode/shared";
-import { getLegacyTaskSessionSnapshotPath, setDataBaseDir } from "../src/paths.js";
-import { parseLegacyTaskSessionFile } from "../src/session/legacyTaskSessionFile.js";
-import { TaskIndexRepo } from "../src/session/taskIndexRepo.js";
-import { createZCodeTaskServiceAdapter } from "../src/zcode-agent/zcodeTaskServiceAdapter.js";
+import { getLegacyTaskSessionSnapshotPath, setDataBaseDir } from "../src/paths.ts";
+import { parseLegacyTaskSessionFile } from "../src/session/legacyTaskSessionFile.ts";
+import { TaskIndexRepo } from "../src/session/taskIndexRepo.ts";
+import { createZCodeTaskServiceAdapter } from "../src/zcode-agent/zcodeTaskServiceAdapter.ts";
 
 for (const clientMode of ["desktop-continuous", "web-remote-replayable"] as const) {
   test(`previously imported Claude history becomes a real session for ${clientMode}`, async () => {

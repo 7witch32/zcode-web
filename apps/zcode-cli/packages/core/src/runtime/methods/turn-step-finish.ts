@@ -4,6 +4,7 @@ import { toTokenUsageInfo } from "../helpers/index.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import type { RuntimeModelTextResult } from "../types.js";
 import type { RegularTurnLoopState } from "./turn-loop-state.js";
+import { buildStepFinishContextUsage, querySourceForTask } from "./turn-model-step-usage.js";
 
 export async function persistToolModelStepFinish(
   runtime: AgentRuntimeInternal,
@@ -19,6 +20,11 @@ export async function persistToolModelStepFinish(
   if (!model) {
     throw new Error("Model-backed turn step finish requires the loop Model");
   }
+  const contextUsage = buildStepFinishContextUsage({
+    contextWindow: model.properties.contextWindow,
+    querySource: querySourceForTask(runtime.config.taskType),
+    result: options.result,
+  });
   await runtime.persistPart(
     {
       id: createPartId(),
@@ -28,6 +34,7 @@ export async function persistToolModelStepFinish(
       reason: options.result.finishReason,
       cost: 0,
       tokens: toTokenUsageInfo(options.result.usage),
+      ...(contextUsage ? { contextUsage } : {}),
     },
     options.modelTraceContext,
   );

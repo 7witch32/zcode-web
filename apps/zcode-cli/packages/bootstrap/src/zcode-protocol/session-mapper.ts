@@ -614,7 +614,10 @@ export function resolveSessionContextUsage(input: {
         ? persistedContextUsage.cache
         : undefined,
     ) ?? persistedContextUsage,
-    latestContextUsageBreakdownFromEvents(input.persistedContextUsageBreakdownEvents ?? []),
+    // eventStore 是内存账本：冷恢复后事件为空，回落到 step-finish part 里持久化的
+    // 最后一次 main_turn 请求构成；live 进程两者同值，事件候选仍保持优先。
+    latestContextUsageBreakdownFromEvents(input.persistedContextUsageBreakdownEvents ?? []) ??
+      latestContextUsageBreakdownFromParts(input.messages),
   );
 }
 
@@ -666,6 +669,41 @@ function latestContextUsageBreakdownFromEvents(
       ...(contextWindow !== undefined ? { contextWindow } : {}),
       used,
     };
+  }
+  return undefined;
+}
+
+function latestContextUsageBreakdownFromParts(
+  messages: readonly MessageWithParts[],
+): ContextUsageBreakdownCandidate | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    // 与 contextUsageFromPersistedMessages 保持同一成员口径：summary assistant 不是
+    // used 水位来源，避免 breakdown 候选和恢复出的 used 取自不同消息。
+    if (!message || message.info.role !== "assistant" || message.info.summary) {
+      continue;
+    }
+    for (let partIndex = message.parts.length - 1; partIndex >= 0; partIndex -= 1) {
+      const part = message.parts[partIndex];
+      if (part?.type !== "step-finish" || !part.contextUsage) {
+        continue;
+      }
+      const parsed = zcodeContextUsageBreakdownSchema.safeParse(part.contextUsage.breakdown);
+      // used 用 part.tokens 按 contextUsedFromTokens 同一口径还原，与 message.info.tokens
+      // 同源，保证与恢复出的 contextUsage.used 对齐；缺分母/空 breakdown 的旧数据直接跳过。
+      const used = contextUsedFromTokens(part.tokens);
+      if (!parsed.success || parsed.data.length === 0 || used === undefined) {
+        continue;
+      }
+      // 不回填 candidate.contextWindow：恢复早期 runtime projection 的分母可能还是
+      // session 默认值（200000）而非 registry 真值，用它做 size 对齐会把唯一合法的
+      // 同消息候选误杀。parts 候选与 used 同源于同一条 assistant message，used 相等
+      // 已足够证明是最后一次请求的构成。
+      return {
+        breakdown: parsed.data,
+        used,
+      };
+    }
   }
   return undefined;
 }

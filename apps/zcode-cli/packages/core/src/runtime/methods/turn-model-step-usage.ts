@@ -51,6 +51,30 @@ export function querySourceForTask(taskType: AgentRuntimeInternal["config"]["tas
   return "main_turn";
 }
 
+/**
+ * step-finish part 的持久化构成事实。session event store 是内存账本，冷恢复拿不到
+ * ModelComplete 事件，只能靠这个字段把「Context windows」breakdown 带回 UI；
+ * used/contextWindow 的对齐护栏在恢复侧用 part.tokens（与 message tokens 同源）执行，
+ * 这里只负责筛出最后一次 main_turn 请求的非空构成，不重估、不造默认值。
+ */
+export function buildStepFinishContextUsage(input: {
+  contextWindow: number | undefined;
+  querySource: string;
+  result: RuntimeModelTextResult;
+}): { contextWindow?: number; breakdown: NonNullable<RuntimeModelTextResult["contextUsageBreakdown"]> } | undefined {
+  if (input.querySource !== "main_turn") {
+    return undefined;
+  }
+  const breakdown = input.result.contextUsageBreakdown;
+  if (!breakdown || breakdown.length === 0) {
+    return undefined;
+  }
+  return {
+    ...(input.contextWindow !== undefined ? { contextWindow: input.contextWindow } : {}),
+    breakdown,
+  };
+}
+
 export function findLatestCommittedAssistantUsage(
   sourceEntries: readonly (RuntimeMessageEntry | undefined)[],
 ): { messageIndex: number; baseline: PersistedTokenUsageBaseline } | undefined {

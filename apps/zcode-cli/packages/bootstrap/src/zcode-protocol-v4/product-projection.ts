@@ -663,6 +663,9 @@ export class ProductProjection {
     if (this.contextWindowState.touchedByEvent) {
       // 同类守卫：显式 ModelSelected.contextWindow（含 null）是日志权威容量，
       // hydration seed 只能补回更准确的 token 事实，不得覆盖 maxTokens 或重新显示 null。
+      // 但 cache/breakdown 是请求事实，与容量分母正交；这个分支过去把它们整键丢掉，
+      // 冷恢复后「Context windows」面板只剩汇总条没有 breakdown，这里按“事件已有则保留，
+      // 否则用种子补回”合并。
       this.contextWindowState.usedTokens = seededContextWindow.usedTokens;
       this.snapshot = {
         ...this.snapshot,
@@ -671,6 +674,15 @@ export class ProductProjection {
             ? {
                 ...currentContextWindow,
                 usedTokens: seededContextWindow.usedTokens,
+                ...(currentContextWindow.cache || seededContextWindow.cache
+                  ? { cache: currentContextWindow.cache ?? seededContextWindow.cache }
+                  : {}),
+                ...(currentContextWindow.breakdown || seededContextWindow.breakdown
+                  ? {
+                      breakdown:
+                        currentContextWindow.breakdown ?? seededContextWindow.breakdown,
+                    }
+                  : {}),
               }
             : null,
           cumulative,

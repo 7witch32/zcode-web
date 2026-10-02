@@ -27,6 +27,7 @@ import type {
 } from "../model/index.js";
 import type { TodoItem } from "../tools/todo.js";
 import type { SessionGoal, GoalStatus } from "../tools/target.js";
+import type { ContextUsageBreakdownItem } from "../events/session.events.js";
 import type { PermissionRuleset } from "./permission.port.js";
 import type { CollaborationMode } from "./session.port.js";
 import type { EnvInfo } from "./context-source.port.js";
@@ -677,6 +678,13 @@ export interface StepStartPart {
   snapshot?: string;
 }
 
+/** 最后一次 main_turn 请求的上下文构成事实；session event store 在内存里，冷恢复靠它重建 breakdown。 */
+export interface StepFinishContextUsage {
+  /** 请求模型的声明容量；与 ModelSelected/ModelComplete 的 contextWindow 同源。 */
+  contextWindow?: number;
+  breakdown: ContextUsageBreakdownItem[];
+}
+
 export interface StepFinishPart {
   id: PartId;
   sessionID: SessionId;
@@ -686,6 +694,7 @@ export interface StepFinishPart {
   snapshot?: string;
   cost: number;
   tokens: TokenUsageInfo;
+  contextUsage?: StepFinishContextUsage;
 }
 
 export interface SnapshotPart {

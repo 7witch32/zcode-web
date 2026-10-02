@@ -357,6 +357,25 @@ export const zcodeTimelinePartSchema = partBaseSchema
       .optional(),
   })
   .strict();
+// context usage breakdown 是最后请求的本地估算构成；step-finish part 与 session
+// runtime state 共用同一组来源枚举，必须先于 part union 声明才能在 step-finish 上引用。
+export const zcodeContextUsageBreakdownSourceSchema = z.enum([
+  "system_prompt",
+  "meta_user_context",
+  "skills",
+  "tool_prompt",
+  "system_tool_schemas",
+  "mcp_tool_schemas",
+  "messages",
+]);
+export const zcodeContextUsageBreakdownItemSchema = z
+  .object({
+    source: zcodeContextUsageBreakdownSourceSchema,
+    chars: z.number().int().nonnegative(),
+  })
+  .strict();
+export type ZCodeContextUsageBreakdownItem = z.infer<typeof zcodeContextUsageBreakdownItemSchema>;
+export const zcodeContextUsageBreakdownSchema = z.array(zcodeContextUsageBreakdownItemSchema);
 export const zcodeMessagePartSchema = z.discriminatedUnion("type", [
   partBaseSchema
     .extend({
@@ -402,6 +421,15 @@ export const zcodeMessagePartSchema = z.discriminatedUnion("type", [
       snapshot: z.string().optional(),
       cost: z.number().nonnegative(),
       tokens: zcodeTokenUsageSchema,
+      // 最后一次 main_turn 请求的上下文构成事实；事件 store 在内存里，冷恢复只能
+      // 靠这个持久化字段重建「Context windows」面板的 breakdown。旧数据没有该字段。
+      contextUsage: z
+        .object({
+          used: z.number().int().nonnegative(),
+          contextWindow: z.number().int().positive().optional(),
+          breakdown: zcodeContextUsageBreakdownSchema,
+        })
+        .optional(),
     })
     .strict(),
   partBaseSchema.extend({ type: z.literal("snapshot"), snapshot: z.string() }).strict(),
@@ -472,23 +500,6 @@ export const zcodeSessionContextCacheUsageSchema = z
     hitRate: z.number().nonnegative().nullable(),
   })
   .strict();
-export const zcodeContextUsageBreakdownSourceSchema = z.enum([
-  "system_prompt",
-  "meta_user_context",
-  "skills",
-  "tool_prompt",
-  "system_tool_schemas",
-  "mcp_tool_schemas",
-  "messages",
-]);
-export const zcodeContextUsageBreakdownItemSchema = z
-  .object({
-    source: zcodeContextUsageBreakdownSourceSchema,
-    chars: z.number().int().nonnegative(),
-  })
-  .strict();
-export type ZCodeContextUsageBreakdownItem = z.infer<typeof zcodeContextUsageBreakdownItemSchema>;
-export const zcodeContextUsageBreakdownSchema = z.array(zcodeContextUsageBreakdownItemSchema);
 export const zcodeSessionContextUsageSchema = z
   .object({
     used: z.number().int().nonnegative(),

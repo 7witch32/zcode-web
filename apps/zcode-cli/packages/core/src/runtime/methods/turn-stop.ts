@@ -5,6 +5,7 @@ import type { RuntimeModelTextResult } from "../types.js";
 import type { AgentRuntimeInternal } from "../internal.js";
 import { drainInlineGuideForNextRequest } from "./turn-guide-drain.js";
 import { recordModelHistoryRound, type RegularTurnLoopState } from "./turn-loop-state.js";
+import { buildStepFinishContextUsage, querySourceForTask } from "./turn-model-step-usage.js";
 import {
   appendTurnRequestEntries,
   commitAssistantToTurnRequest,
@@ -76,6 +77,11 @@ export async function persistCompletedAssistantStep(
     return false;
   }
   const persistedTokens = toTokenUsageInfo(options.result.usage);
+  const contextUsage = buildStepFinishContextUsage({
+    contextWindow: model.properties.contextWindow,
+    querySource: querySourceForTask(runtime.config.taskType),
+    result: options.result,
+  });
   await runtime.persistPart(
     {
       id: createPartId(),
@@ -85,6 +91,7 @@ export async function persistCompletedAssistantStep(
       reason: options.result.finishReason,
       cost: 0,
       tokens: persistedTokens,
+      ...(contextUsage ? { contextUsage } : {}),
     },
     options.modelTraceContext,
   );

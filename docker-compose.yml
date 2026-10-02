@@ -33,6 +33,10 @@ services:
       - docker-control
     volumes:
       - zcode-data:/data
+      # settingService writes ~/.zcode/v2/setting.json under $HOME (resolveUserHomeDir),
+      # which lives in the container's ephemeral layer. Persist it so UI settings
+      # (auto-archive, locale, proxies, shortcut bindings, ...) survive recreates.
+      - zcode-home:/home/node/.zcode
       - ./workspace:/workspace
     working_dir: /workspace
 
@@ -70,6 +74,7 @@ services:
 
 volumes:
   zcode-data:
+  zcode-home:
 
 networks:
   docker-control:

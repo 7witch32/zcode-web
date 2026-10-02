@@ -95,11 +95,16 @@ type CodingPlanUsageTrendRange = Extract<CodingPlanUsageRange, "7d" | "30d">;
 
 export function CodingPlanUsagePanel({
   loadingSources,
+  providerSettingsError,
+  onRetryProviderSettings,
   selectedSource,
   workspaceIdentity,
   workspacePath,
 }: {
   loadingSources: boolean;
+  /** Provider settings 读取失败的原因；非空且没有可用 source 时展示错误+重试而不是误报“无连接”。 */
+  providerSettingsError?: string | null;
+  onRetryProviderSettings?: () => void;
   selectedSource?: CodingPlanUsageSource | null;
   workspaceIdentity?: string;
   workspacePath?: string;
@@ -222,6 +227,28 @@ export function CodingPlanUsagePanel({
           id: "settings.usage.codingPlanLoadingDescription",
         })}
       />
+    );
+  }
+
+  if (!loadingSources && !effectiveSource && providerSettingsError) {
+    // 读取供应商设置失败在这里提前返回：不能再落到下方“未连接”分支把故障
+    // 伪装成用户没配置连接。提供 Retry 走 useProviderSettingsView 的 reload。
+    return (
+      <div className="space-y-3">
+        <UsageEmptyState
+          title={intl.formatMessage({
+            id: "settings.usage.providerSettingsLoadFailedTitle",
+          })}
+          description={providerSettingsError}
+        />
+        {onRetryProviderSettings ? (
+          <div className="flex justify-center">
+            <Button type="button" variant="outline" size="sm" onClick={onRetryProviderSettings}>
+              {intl.formatMessage({ id: "common.retry" })}
+            </Button>
+          </div>
+        ) : null}
+      </div>
     );
   }
 

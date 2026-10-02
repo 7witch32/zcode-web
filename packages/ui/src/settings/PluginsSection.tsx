@@ -180,6 +180,7 @@ function PluginList({
   const availablePlugins = usePluginManagementStore((state) => state.availablePlugins);
   const restorableBuiltins = usePluginManagementStore((state) => state.restorableBuiltins);
   const loading = usePluginManagementStore((state) => state.loading);
+  const pluginStoreError = usePluginManagementStore((state) => state.error);
   const pluginDiagnostics = usePluginManagementStore((state) => state.diagnostics);
   const currentWorkspacePath = usePluginManagementStore((state) => state.workspacePath);
   const currentWorkspaceIdentity = usePluginManagementStore((state) => state.workspaceIdentity);
@@ -841,6 +842,15 @@ function PluginList({
               { id: "settings.plugins.remoteContext" },
               { target: remotePluginSyncTargetLabel },
             )}
+          </div>
+        ) : null}
+        {pluginStoreError ? (
+          // 加载/操作失败必须可见：旧实现把失败渲染成“没有安装任何插件”的空态。
+          <div
+            className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive"
+            data-testid="plugins-section-error"
+          >
+            {pluginStoreError}
           </div>
         ) : null}
         {!target ? (

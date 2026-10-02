@@ -124,9 +124,11 @@ export function SettingsRow({
       <div
         className={cn(
           "grid items-center gap-4",
+          // Stack label above control on narrow screens (mirrors the "wide" variant);
+          // the fixed 192px control column would leave ~66px for labels on phones.
           controlLayout === "wide"
             ? "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_280px]"
-            : "grid-cols-[minmax(0,1fr)_192px]",
+            : "grid-cols-1 sm:grid-cols-[minmax(0,1fr)_192px]",
         )}
       >
         <div className="min-w-0">
@@ -135,7 +137,7 @@ export function SettingsRow({
             <div className="mt-1 text-ui-base leading-6 text-foreground-subtle">{description}</div>
           ) : null}
         </div>
-        <div className="flex w-full flex-nowrap items-center justify-end gap-2">
+        <div className="flex w-full flex-nowrap items-center justify-end gap-2 max-sm:justify-start">
           {controlLayout === "wide" ? detail : null}
           {control}
         </div>

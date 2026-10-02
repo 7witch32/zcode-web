@@ -36,10 +36,11 @@ export function SavedWorkflowArgsTable({
   const { intl } = useZCodeIntl();
   const columns = "grid-cols-[minmax(0,1.4fr)_112px_64px_minmax(0,1fr)_minmax(0,1.6fr)_28px]";
   return (
-    <div className="overflow-hidden rounded-lg border border-border">
+    // Six fixed columns cannot fit a phone; scroll horizontally instead of clipping.
+    <div className="overflow-x-auto rounded-lg border border-border">
       <div
         className={cn(
-          "grid items-center gap-3 bg-surface px-3 py-1.5 text-ui-sm text-foreground-subtle",
+          "grid min-w-[640px] items-center gap-3 bg-surface px-3 py-1.5 text-ui-sm text-foreground-subtle",
           columns,
         )}
       >
@@ -58,7 +59,7 @@ export function SavedWorkflowArgsTable({
             className="border-t border-border px-3 py-2"
             data-workflow-arg-row={row.name}
           >
-            <div className={cn("grid items-center gap-3", columns)}>
+            <div className={cn("grid min-w-[640px] items-center gap-3", columns)}>
               <Input
                 aria-label={intl.formatMessage({ id: "workflows.hub.detail.args.name" })}
                 className={cn(

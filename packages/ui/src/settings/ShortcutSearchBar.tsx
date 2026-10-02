@@ -30,8 +30,10 @@ export function ShortcutSearchBar({
     keySearch.binding !== null ? formatShortcutBindingLabel(keySearch.binding) : null;
 
   return (
-    <div className="flex gap-2">
-      <div className="relative flex-1">
+    // Wrap so the reset-all action drops below the input on narrow screens instead of
+    // squeezing the input to nothing.
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="relative min-w-48 flex-1">
         <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-foreground-subtle" />
         <Input
           className={`pl-9 font-mono ${keyLabel !== null ? "pr-16 text-brand" : "pr-9"}`}

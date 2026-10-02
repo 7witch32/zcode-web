@@ -437,13 +437,19 @@ function InfoSection({
       </div>
       <dl className="mt-3 space-y-2.5">
         {rows.map((row) => (
-          <div key={row.key} className="grid grid-cols-[8rem_minmax(0,1fr)] items-baseline gap-3">
+          <div
+            key={row.key}
+            className="grid grid-cols-[8rem_minmax(0,1fr)] items-baseline gap-3 max-md:grid-cols-1 max-md:gap-1"
+          >
             <dt className="text-ui-base text-foreground-subtle">{row.label}</dt>
             <dd className="min-w-0 truncate text-ui-base text-foreground">{row.value}</dd>
           </div>
         ))}
         {linkRows.map((row) => (
-          <div key={row.key} className="grid grid-cols-[8rem_minmax(0,1fr)] items-baseline gap-3">
+          <div
+            key={row.key}
+            className="grid grid-cols-[8rem_minmax(0,1fr)] items-baseline gap-3 max-md:grid-cols-1 max-md:gap-1"
+          >
             <dt className="text-ui-base text-foreground-subtle">{row.label}</dt>
             <dd className="min-w-0">
               <button

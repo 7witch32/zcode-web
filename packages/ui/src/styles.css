@@ -2054,14 +2054,16 @@ body {
 
 /* iOS Safari zooms focused editable controls below 16px. Keep the normal UI scale on touch devices while preventing focus zoom. */
 @media (hover: none) and (pointer: coarse) {
-  .zcode-chat-input {
-    font-size: 16px;
+  .zcode-chat-input,
+  .zcode-settings-page input,
+  .zcode-settings-page textarea {
+    font-size: var(--text-mobile-input-safe);
   }
 }
 
 /* iOS Safari zooms focused editable controls below 16px. Keep the normal UI scale on touch devices while preventing focus zoom. */
 @media (hover: none) and (pointer: coarse) {
   [contenteditable="true"].min-h-10.max-h-40 {
-    font-size: 16px;
+    font-size: var(--text-mobile-input-safe);
   }
 }

@@ -26,6 +26,11 @@ export function ConfirmDialogHost() {
   const settleConfirmation = useConfirmDialogStore((state) => state.settleConfirmation);
 
   const settleChoice = useConfirmDialogStore((state) => state.settleChoice);
+  const dismissAllPending = useConfirmDialogStore((state) => state.dismissAllPending);
+
+  // Host 卸载后（根树切换/窗口关闭）没有人能再渲染并结算挂起的弹窗；
+  // 统一按 dismiss 收尾，调用侧的 await 不得永久悬挂，也不能污染后续弹窗。
+  useEffect(() => () => dismissAllPending(), [dismissAllPending]);
 
   const displayedRequestRef = useRef(pendingRequest);
   if (pendingRequest) {

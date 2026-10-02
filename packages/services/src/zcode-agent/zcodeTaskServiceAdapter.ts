@@ -1103,11 +1103,7 @@ export function createZCodeTaskServiceAdapter(
         olderThanDays: settings.taskAutoArchiveOlderThanDays ?? 7,
       };
     } catch (error) {
-      logger.warn(
-        undefined,
-        "读取 task 自动归档设置失败，跳过本轮自动归档",
-        error,
-      );
+      logger.warn(undefined, "读取 task 自动归档设置失败，跳过本轮自动归档", error);
       return null;
     }
   }
@@ -1352,17 +1348,13 @@ export function createZCodeTaskServiceAdapter(
     reason: "replayable_snapshot" | "resume_task",
   ): Promise<{ model?: string; thoughtLevel?: string }> {
     const meta = await taskIndexRepo.getTaskMeta(params).catch((error) => {
-      logger.warn(
-        undefined,
-        "读取 task index resume hint 失败，继续不带历史配置恢复",
-        {
-          error: error instanceof Error ? error.message : String(error),
-          reason,
-          taskId: params.taskId,
-          workspaceIdentity: params.workspaceIdentity ?? null,
-          workspacePath: params.workspacePath,
-        },
-      );
+      logger.warn(undefined, "读取 task index resume hint 失败，继续不带历史配置恢复", {
+        error: error instanceof Error ? error.message : String(error),
+        reason,
+        taskId: params.taskId,
+        workspaceIdentity: params.workspaceIdentity ?? null,
+        workspacePath: params.workspacePath,
+      });
       return null;
     });
     const model = meta?.model?.trim();
@@ -1836,15 +1828,11 @@ export function createZCodeTaskServiceAdapter(
           }
           // 手机端草稿 session 和桌面一样只存在 agent runtime 内存里。
           // 远端重连/agent 重启后旧 draftSessionId 可能失效；首发消费点降级新建，避免用户卡死。
-          logger.warn(
-            undefined,
-            "手机 replayable draft session 已失效，降级创建新 task",
-            {
-              draftSessionId,
-              workspaceIdentity: target.workspaceIdentity ?? null,
-              workspacePath: target.workspacePath,
-            },
-          );
+          logger.warn(undefined, "手机 replayable draft session 已失效，降级创建新 task", {
+            draftSessionId,
+            workspaceIdentity: target.workspaceIdentity ?? null,
+            workspacePath: target.workspacePath,
+          });
         }
       }
       if (!snapshot) {
@@ -2438,9 +2426,12 @@ export function createZCodeTaskServiceAdapter(
     async listGroupedTaskViewStructure(params) {
       // grouped 原始结构（不 join tasks 表）；任务内容由 task-index/session 在 renderer 侧 join。
       // 冷启动 sidebar 必须看到所有 directory，因此支持 includeAllWorkspaces，不依赖已打开的 tabs.
-      if (!params.includeAllWorkspaces) {
-        await runWorkspaceTaskAutoArchive(params.workspaceScopes);
-      }
+      // Auto-archive runs on both lanes again: the global lane only widens the QUERY,
+      // while the archive set stays `workspaceScopes` (the open tabs), so unopened
+      // directories are never archived behind the user's back. The previous
+      // `includeAllWorkspaces` skip had silently disabled settings-driven auto-archive
+      // because the grouped sidebar now always passes includeAllWorkspaces=true.
+      await runWorkspaceTaskAutoArchive(params.workspaceScopes);
       const result = await taskIndexRepo.queryGroupedTaskViewStructure(params);
       if (params.includeAllWorkspaces) {
         // Global sidebar must receive task rows from the same global query boundary; cold start cannot depend on a workspace-scoped renderer lookup.

@@ -6,9 +6,11 @@ import type {
 } from "@zcode/services";
 import { logger } from "@/logger.js";
 import { useBaseWorkspaceServices } from "@/hooks/useWorkspaceServices.js";
+import { useOptionalPlatform } from "@/hooks/usePlatform.js";
 import type { WorkspaceTabState } from "@/store/tabStore.js";
 import { selectWorkspaceZCodeState, useZCodeSessionStore } from "@/store/zcodeSessionStore.js";
 import { attachTaskListRowActivity } from "@/v4/taskListRowActivity.js";
+import { mergeLiveMetaIntoItem, toGlobalTaskListRow } from "@/v4/globalTaskListLiveMeta.js";
 import { stabilizeTaskListItems } from "@/v4/taskListItemStabilization.js";
 import { getWindowControllerTaskListRegistry } from "@/v4/windowControllerTaskListRegistry.js";
 import type { WindowControllerTaskListVersion } from "@/v4/windowControllerTaskListRegistry.js";
@@ -45,7 +47,12 @@ export function useGlobalTaskList(params: {
 }) {
   const enabled = params.enabled !== false;
   const baseServices = useBaseWorkspaceServices();
-  const controller = baseServices.windowControllerService;
+  // The window-controller live lane only exists on the desktop host. The web client
+  // always builds the service proxy, so without this gate every page load subscribes
+  // to an unregistered channel and the server logs "Unknown channel: window-controller".
+  // useOptionalPlatform (not usePlatform) keeps provider-less hosts (share previews) safe.
+  const platformKind = useOptionalPlatform()?.platformKind;
+  const controller = platformKind === "web" ? null : baseServices.windowControllerService;
   const controllerRegistry = useMemo(
     () => (controller ? getWindowControllerTaskListRegistry(controller) : null),
     [controller],
@@ -110,6 +117,13 @@ export function useGlobalTaskList(params: {
     () => new Map(),
   );
   const itemsRef = useRef<GlobalTaskListItem[]>(items);
+  // Render-synced mirror for load(): the load callback intentionally omits
+  // liveMetaByTaskKey from its deps so controller/taskList version bumps do not trigger a
+  // fresh query on every live event, but every reload must still merge the LATEST live
+  // meta — reading the state inside load would capture a stale closure and silently
+  // revert live patches (status/pendingInteraction) until the next event for that task.
+  const liveMetaRef = useRef(liveMetaByTaskKey);
+  liveMetaRef.current = liveMetaByTaskKey;
   const [total, setTotal] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(
@@ -144,6 +158,10 @@ export function useGlobalTaskList(params: {
       setLiveMetaByTaskKey(new Map());
       return;
     }
+    // Reconcile on every (re)subscription: the syncer replays a fresh snapshot right after
+    // this registration returns, so entries from a previous (possibly dead) ingest must
+    // not outlive it with merge priority over the DB rows.
+    setLiveMetaByTaskKey(new Map());
     const service = baseServices.zcodeTaskService;
     const disposable = service.onDynamicWorkspaceEvent("*")((event) => {
       if (event.type !== "workspace_task_list_changed") {
@@ -154,6 +172,7 @@ export function useGlobalTaskList(params: {
       const workspaceKey =
         event.workspaceIdentity?.trim() ||
         event.workspacePath ||
+        event.taskMeta?.workspaceIdentity?.trim() ||
         event.taskMeta?.workspacePath ||
         "";
       const key = `${workspaceKey}::${taskId}`;
@@ -190,38 +209,18 @@ export function useGlobalTaskList(params: {
       return;
     }
     setItems((current) => {
-      let changed = false;
       const next = current.map((item) => {
         const workspaceKey = item.workspaceIdentity?.trim() || item.workspacePath;
-        const liveMeta = liveMetaByTaskKey.get(`${workspaceKey}::${item.taskId}`);
-        if (!liveMeta) return item;
-        const status = liveMeta.status ?? item.status;
-        const liveStatus: GlobalTaskListItem["liveStatus"] =
-          status === "completed"
-            ? "completed"
-            : status === "error"
-              ? "error"
-              : status === "running"
-                ? "running"
-                : "idle";
-        if (
-          item.status === status &&
-          item.pendingInteraction === liveMeta.pendingInteraction &&
-          item.liveStatus === liveStatus
-        ) {
-          return item;
-        }
-        changed = true;
-        return {
-          ...item,
-          status,
-          pendingInteraction: liveMeta.pendingInteraction,
-          updatedAt: liveMeta.updatedAt ?? item.updatedAt,
-          liveStatus,
-        };
+        return mergeLiveMetaIntoItem(
+          item,
+          liveMetaByTaskKey.get(`${workspaceKey}::${item.taskId}`),
+        );
       });
-      if (changed) itemsRef.current = next;
-      return changed ? next : current;
+      if (next.every((item, index) => item === current[index])) {
+        return current;
+      }
+      itemsRef.current = next;
+      return next;
     });
   }, [enabled, liveMetaByTaskKey, params.includeAllWorkspaces]);
 
@@ -261,26 +260,15 @@ export function useGlobalTaskList(params: {
           const response = await baseServices.zcodeTaskService.listTaskList(query);
           result = {
             ...response,
+            // Read live meta through the ref (not the state): the dep array above
+            // deliberately excludes it, so the ref is what keeps reloads from merging a
+            // stale live-meta snapshot over fresher DB rows.
             items: response.items.map((item) => {
               const workspaceKey = item.workspaceIdentity?.trim() || item.workspacePath;
-              const liveMeta = liveMetaByTaskKey.get(`${workspaceKey}::${item.taskId}`);
-              const status = liveMeta?.status ?? item.status;
-              return {
-                ...item,
-                ...(liveMeta?.pendingInteraction
-                  ? { pendingInteraction: liveMeta.pendingInteraction }
-                  : { pendingInteraction: undefined }),
-                updatedAt: liveMeta?.updatedAt ?? item.updatedAt,
-                sourceAvailability: "online",
-                liveStatus:
-                  status === "completed"
-                    ? ("completed" as const)
-                    : status === "error"
-                      ? ("error" as const)
-                      : status === "running"
-                        ? ("running" as const)
-                        : ("idle" as const),
-              };
+              return toGlobalTaskListRow(
+                item,
+                liveMetaRef.current.get(`${workspaceKey}::${item.taskId}`),
+              );
             }),
           };
         } else {

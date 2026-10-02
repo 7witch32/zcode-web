@@ -1,4 +1,4 @@
-import { Keyboard, Pencil, Trash2 } from "lucide-react";
+import { Keyboard, Pencil, Trash2, X } from "lucide-react";
 import type { ShortcutCommandEntry, ShortcutCommandId } from "@zcode/shared";
 import { Button } from "@/components/ui/button.js";
 import { Kbd, KbdGroup } from "@/components/ui/kbd.js";
@@ -30,6 +30,10 @@ interface ShortcutBindingRowProps {
   recording: RecordingState | null;
   /** Web 端 menu 通道命令：录制入口置灰（默认键被根级回退监听固定消费）。 */
   menuChannelUnavailable: boolean;
+  /** 触屏设备：录制态显示可点击的取消按钮（没有 Esc 可按）。 */
+  showTouchCancel?: boolean;
+  /** 取消进行中的录制（触屏取消入口）。 */
+  onCancelRecording?: () => void;
   /** 替换某条绑定（index = 生效列表下标；null = 未分配录第一条）。 */
   onRecord: (bindingIndex: number | null) => void;
   onSteal: (binding: string) => void;
@@ -50,6 +54,8 @@ export function ShortcutBindingRow({
   isRecording,
   recording,
   menuChannelUnavailable,
+  showTouchCancel = false,
+  onCancelRecording,
   onRecord,
   onSteal,
   onClearAll,
@@ -75,6 +81,18 @@ export function ShortcutBindingRow({
           >
             {recording?.preview ?? intl.formatMessage({ id: "settings.shortcuts.recording" })}
           </kbd>
+          {showTouchCancel ? (
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              className="size-7"
+              aria-label={intl.formatMessage({ id: "settings.shortcuts.cancelRecording" })}
+              data-testid={`settings-shortcut-cancel-${entry.id}`}
+              onClick={onCancelRecording}
+            >
+              <X className="size-3.5" />
+            </Button>
+          ) : null}
         </span>
         {recording?.error ? (
           <span
@@ -134,6 +152,7 @@ export function ShortcutBindingRow({
         <Button
           variant="ghost"
           size="icon-sm"
+          className="max-md:size-7"
           disabled={menuChannelUnavailable}
           aria-label={intl.formatMessage(
             { id: "settings.shortcuts.rebindAria" },
@@ -150,13 +169,14 @@ export function ShortcutBindingRow({
 
   return (
     <div
-      className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_72px] items-center border-t border-border px-4 py-3 text-ui-base"
+      className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_72px] items-center border-t border-border px-4 py-3 text-ui-base max-md:grid-cols-[minmax(0,1fr)_auto] max-md:gap-y-2"
       data-testid={`settings-shortcut-row-${entry.id}`}
     >
-      <span className="flex min-w-0 items-center">
+      {/* max-md: two lines — command + scope, then bindings + clear (order classes). */}
+      <span className="flex min-w-0 items-center max-md:order-1">
         <span className="truncate">{commandLabel}</span>
       </span>
-      <span className="flex min-w-0 flex-col items-start gap-1.5">
+      <span className="flex min-w-0 flex-col items-start gap-1.5 max-md:order-3">
         {bindings.map((binding, index) =>
           isRecording && recording?.mode === "replace" && recording.bindingIndex === index
             ? renderRecorder()
@@ -184,7 +204,7 @@ export function ShortcutBindingRow({
       </span>
       {/* 作用域独立成列：global = 全局生效；composer = 仅聊天输入框内生效 */}
       <span
-        className="text-ui-sm text-foreground-subtle"
+        className="text-ui-sm text-foreground-subtle max-md:order-2 max-md:justify-self-end"
         data-testid={`settings-shortcut-scope-${entry.id}`}
       >
         {entry.scope === "composer"
@@ -194,6 +214,7 @@ export function ShortcutBindingRow({
       <Button
         variant="ghost"
         size="icon"
+        className="max-md:order-4 max-md:size-8 max-md:justify-self-end"
         aria-label={intl.formatMessage(
           { id: "settings.shortcuts.clearAria" },
           { command: commandLabel },

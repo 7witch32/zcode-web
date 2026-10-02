@@ -58,6 +58,10 @@ import {
 import { AnimatedTerminalPanel } from "@/app-shell/AnimatedTerminalPanel.js";
 import { SIDE_PANE_DEFAULT_EXPANDED_SIZE } from "@/app-shell/sidePaneLayout.js";
 import { useAnimatedResizablePanel } from "@/app-shell/useAnimatedResizablePanel.js";
+import {
+  isPhoneSidebarSwipeTriggered,
+  type PhoneSidebarSwipeMode,
+} from "@/app-shell/phoneSidebarSwipe.js";
 import { ensureTaskNavigationWorkspace } from "@/app-shell/taskNavigationWorkspace.js";
 
 import {
@@ -119,7 +123,12 @@ const CONVERSATION_AUTO_COLLAPSE_SIDEBAR_WIDTH_PX = 360;
 const CONVERSATION_AUTO_COLLAPSE_RESIZE_IDLE_MS = 300;
 const PHONE_SIDEBAR_EDGE_SWIPE_START_PX = 24;
 const PHONE_SIDEBAR_EDGE_SWIPE_TRIGGER_PX = 48;
-const PHONE_SIDEBAR_EDGE_SWIPE_DIRECTION_PX = 12;
+// Must stay in sync with Tailwind's `max-md:` variant (width < 768px, i.e. 48rem at the
+// default 16px root font-size). Do NOT use "(max-width: 767px)" here: with zoom/DPR
+// fractions a viewport can be 767.5px, where the phone CSS classes already apply but a
+// 767px query would silently leave JS-side phone behavior (auto-close, edge swipe,
+// resize guard) behind the layout. Change this value and the `max-md` usage together.
+const PHONE_SIDEBAR_MEDIA_QUERY = "(max-width: 767.999px)";
 // 性能修复：ResizablePanelGroup 收到深相等的新 panelIds 数组，
 // 会跟随 chat streaming render 重算布局上下文；固定数组语义上不会随消息变化。
 const WORKSPACE_BODY_PANEL_IDS = ["conversation-column", "browser"];
@@ -136,7 +145,7 @@ type PhoneSidebarEdgeSwipeSession = {
   pointerId: number;
   startX: number;
   startY: number;
-  tracking: boolean;
+  mode: PhoneSidebarSwipeMode;
 };
 
 function clampWorkspaceSidebarWidth(widthPx: number, containerWidthPx?: number) {
@@ -396,10 +405,24 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   const conversationAutoCollapseResizeTimerRef = useRef<number | null>(null);
   const workspaceSidebarResizeSessionRef = useRef<WorkspaceSidebarResizeSession | null>(null);
   const phoneSidebarEdgeSwipeSessionRef = useRef<PhoneSidebarEdgeSwipeSession | null>(null);
-  const phoneSidebarTouchSwipeStartRef = useRef<{ x: number; y: number } | null>(null);
+  const phoneSidebarTouchSwipeStartRef = useRef<{
+    x: number;
+    y: number;
+    mode: PhoneSidebarSwipeMode;
+  } | null>(null);
+  // One-shot click suppression window for swipe-to-close: the swipe may end on a
+  // tappable row, so the click synthesized right after the toggle must not also
+  // activate it. See onClickCapture on the workspace shell.
+  const phoneSidebarSwipeCloseClickGuardUntilRef = useRef(0);
   const phoneSidebarToggleRef = useRef(handleToggleSidebar);
   const phoneSidebarVisibleRef = useRef(isSidebarVisible);
   const phoneSidebarBreakpointActiveRef = useRef(false);
+  // These two refs are synced in the render body on purpose (not in an effect): one
+  // physical gesture fires pointerup BEFORE touchend. The pointer path toggles first;
+  // React flushes that discrete state update synchronously, the assignment below
+  // refreshes the ref during that render, and the touchend guard then sees the new
+  // visibility and skips the second toggle. Moving this sync into a useEffect (or
+  // wrapping the toggle in a transition) reintroduces a double-toggle race.
   phoneSidebarToggleRef.current = handleToggleSidebar;
   phoneSidebarVisibleRef.current = isSidebarVisible;
   const [workspaceSidebarPanelWidthPx, setWorkspaceSidebarPanelWidthPx] = useState(
@@ -422,9 +445,12 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   }, [openWorkspaceKeys]);
   const isSidebarPanelVisible = isSidebarVisible;
 
-  // On phone-sized WebUI, the sidebar is an overlay rather than a layout column.
-  // Close it only when entering the phone breakpoint. Do not depend on sidebar visibility:
-  // otherwise tapping the menu would immediately trigger this effect again and close it.
+  // On phone-sized WebUI the sidebar stays in the flex flow (push layout): opening it
+  // displaces the content column instead of floating above it. This effect closes an
+  // open sidebar when the shell enters the phone breakpoint and also on every active
+  // workspace change (intentional: each workspace starts with the sidebar closed on
+  // phones). Do not depend on sidebar visibility here, otherwise tapping the menu would
+  // immediately retrigger this effect and close it again.
   useEffect(() => {
     if (isDesktop || typeof window === "undefined") {
       phoneSidebarBreakpointActiveRef.current = false;
@@ -432,7 +458,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       return;
     }
 
-    const phoneQuery = window.matchMedia("(max-width: 767px)");
+    const phoneQuery = window.matchMedia(PHONE_SIDEBAR_MEDIA_QUERY);
     const syncPhoneBreakpoint = (matches: boolean) => {
       if (matches && !phoneSidebarBreakpointActiveRef.current) {
         phoneSidebarBreakpointActiveRef.current = true;
@@ -457,39 +483,54 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     (event: ReactTouchEvent<HTMLDivElement>) => {
       if (
         isDesktop ||
-        isSidebarVisible ||
         typeof window === "undefined" ||
-        !window.matchMedia("(max-width: 767px)").matches
+        !window.matchMedia(PHONE_SIDEBAR_MEDIA_QUERY).matches
       ) {
         return;
       }
       const touch = event.touches[0];
-      if (!touch || touch.clientX > PHONE_SIDEBAR_EDGE_SWIPE_START_PX) {
+      if (!touch) {
         return;
+      }
+      const target = event.target as HTMLElement | null;
+      let mode: PhoneSidebarSwipeMode;
+      if (!isSidebarVisible) {
+        // Open gesture: reveal from the left screen edge, ignoring gestures that start
+        // on interactive controls (a drag from the top-left toggle belongs to that
+        // control, not to the sidebar edge swipe).
+        if (touch.clientX > PHONE_SIDEBAR_EDGE_SWIPE_START_PX) {
+          return;
+        }
+        if (target?.closest("button,a,input,textarea,select,[role=button]")) {
+          return;
+        }
+        mode = "open";
+      } else {
+        // Close gesture: swipe left starting anywhere over the open sidebar.
+        if (!target?.closest("[data-workspace-sidebar-panel]")) {
+          return;
+        }
+        mode = "close";
       }
       phoneSidebarTouchSwipeStartRef.current = {
         x: touch.clientX,
         y: touch.clientY,
+        mode,
       };
     },
     [isDesktop, isSidebarVisible],
   );
 
-  const handlePhoneSidebarTouchMove = useCallback(
-    (event: ReactTouchEvent<HTMLDivElement>) => {
-      const start = phoneSidebarTouchSwipeStartRef.current;
-      const touch = event.touches[0];
-      if (!start || !touch) {
-        return;
-      }
-      const deltaX = touch.clientX - start.x;
-      const deltaY = Math.abs(touch.clientY - start.y);
-      if (deltaX >= PHONE_SIDEBAR_EDGE_SWIPE_DIRECTION_PX && deltaX > deltaY) {
-        event.preventDefault();
-      }
-    },
-    [],
-  );
+  const handlePhoneSidebarTouchCancel = useCallback(() => {
+    phoneSidebarTouchSwipeStartRef.current = null;
+  }, []);
+
+  // One gesture system per device: PointerEvent is the primary path (pointerId tracking +
+  // capture-phase listeners), so the legacy touch path only runs where PointerEvent is
+  // unavailable. This keeps the two systems from racing over the same physical gesture
+  // (pointerup fires before touchend for every touch on modern browsers).
+  const supportsNativePointerEvents =
+    typeof window !== "undefined" && typeof window.PointerEvent === "function";
 
   const handlePhoneSidebarTouchEnd = useCallback(
     (event: ReactTouchEvent<HTMLDivElement>) => {
@@ -499,14 +540,19 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       if (!start || !touch) {
         return;
       }
-      const deltaX = touch.clientX - start.x;
-      const deltaY = Math.abs(touch.clientY - start.y);
       if (
-        deltaX >= PHONE_SIDEBAR_EDGE_SWIPE_TRIGGER_PX &&
-        deltaX > deltaY &&
         !isDesktop &&
-        !phoneSidebarVisibleRef.current
+        isPhoneSidebarSwipeTriggered({
+          mode: start.mode,
+          deltaX: touch.clientX - start.x,
+          deltaY: Math.abs(touch.clientY - start.y),
+          triggerPx: PHONE_SIDEBAR_EDGE_SWIPE_TRIGGER_PX,
+        })
       ) {
+        if (start.mode === "close") {
+          phoneSidebarSwipeCloseClickGuardUntilRef.current = Date.now() + 500;
+        }
+        // touchend preventDefault also cancels the synthetic click on legacy browsers.
         phoneSidebarToggleRef.current();
         event.preventDefault();
       }
@@ -518,48 +564,56 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (
         isDesktop ||
-        isSidebarVisible ||
         typeof window === "undefined" ||
-        !window.matchMedia("(max-width: 767px)").matches ||
-        event.pointerType === "mouse" ||
-        event.clientX > PHONE_SIDEBAR_EDGE_SWIPE_START_PX
+        !window.matchMedia(PHONE_SIDEBAR_MEDIA_QUERY).matches ||
+        event.pointerType === "mouse"
       ) {
         return;
       }
 
       const target = event.target as HTMLElement | null;
-      if (target?.closest("button,a,input,textarea,select,[role=button]")) {
-        return;
+      let mode: PhoneSidebarSwipeMode;
+      if (!isSidebarVisible) {
+        // Open gesture: reveal from the left screen edge, ignoring gestures that start
+        // on interactive controls (a drag from the top-left toggle belongs to that
+        // control, not to the sidebar edge swipe).
+        if (event.clientX > PHONE_SIDEBAR_EDGE_SWIPE_START_PX) {
+          return;
+        }
+        if (target?.closest("button,a,input,textarea,select,[role=button]")) {
+          return;
+        }
+        mode = "open";
+      } else {
+        // Close gesture: swipe left starting anywhere over the open sidebar,
+        // including on rows/buttons — the swipe distance exceeds tap slop and the
+        // one-shot click guard cancels whatever click still slips through.
+        if (!target?.closest("[data-workspace-sidebar-panel]")) {
+          return;
+        }
+        mode = "close";
       }
 
       phoneSidebarEdgeSwipeSessionRef.current = {
         pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
-        tracking: true,
+        mode,
       };
-      event.currentTarget.setPointerCapture(event.pointerId);
+      // Explicit capture retargets pointerup to the shell (finger drifting off-element
+      // still finishes the gesture), but it would also retarget taps on interactive
+      // elements and break their click — so only capture non-interactive starts.
+      if (mode === "open" || !target?.closest("button,a,input,textarea,select,[role=button]")) {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      }
     },
     [isDesktop, isSidebarVisible],
   );
 
-  const handlePhoneSidebarEdgeSwipeMove = useCallback(
-    (event: ReactPointerEvent<HTMLDivElement>) => {
-      const session = phoneSidebarEdgeSwipeSessionRef.current;
-      if (!session || session.pointerId !== event.pointerId) {
-        return;
-      }
-
-      const deltaX = event.clientX - session.startX;
-      const deltaY = Math.abs(event.clientY - session.startY);
-      if (deltaX < PHONE_SIDEBAR_EDGE_SWIPE_DIRECTION_PX || deltaX <= deltaY) {
-        return;
-      }
-
-      event.preventDefault();
-    },
-    [],
-  );
+  // No preventDefault here on purpose: horizontal swipes are already isolated from
+  // scrolling by the shell's `touch-pan-y`, and pointermove preventDefault would only
+  // suppress compatibility mouse events. Scrolling/tilt rejection is handled by the
+  // delta checks in the finish handler below.
 
   const finishPhoneSidebarEdgeSwipe = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>, cancelled = false) => {
@@ -569,16 +623,19 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       }
 
       phoneSidebarEdgeSwipeSessionRef.current = null;
-      if (!cancelled) {
-        const deltaX = event.clientX - session.startX;
-        const deltaY = Math.abs(event.clientY - session.startY);
-        if (
-          session.tracking &&
-          deltaX >= PHONE_SIDEBAR_EDGE_SWIPE_TRIGGER_PX &&
-          deltaX > deltaY
-        ) {
-          phoneSidebarToggleRef.current();
+      if (
+        !cancelled &&
+        isPhoneSidebarSwipeTriggered({
+          mode: session.mode,
+          deltaX: event.clientX - session.startX,
+          deltaY: Math.abs(event.clientY - session.startY),
+          triggerPx: PHONE_SIDEBAR_EDGE_SWIPE_TRIGGER_PX,
+        })
+      ) {
+        if (session.mode === "close") {
+          phoneSidebarSwipeCloseClickGuardUntilRef.current = Date.now() + 500;
         }
+        phoneSidebarToggleRef.current();
       }
 
       if (event.currentTarget.hasPointerCapture(event.pointerId)) {
@@ -788,6 +845,12 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
   const handleWorkspaceSidebarResizeStart = useCallback(
     (event: ReactPointerEvent<HTMLDivElement>) => {
       if (!isSidebarPanelVisible || (event.pointerType === "mouse" && event.button !== 0)) {
+        return;
+      }
+      // The phone layout hides the separator and clamps the sidebar to the viewport;
+      // width dragging stays a desktop-only affordance so a touch drag cannot persist
+      // an oversized width for the next cold start.
+      if (typeof window !== "undefined" && window.matchMedia(PHONE_SIDEBAR_MEDIA_QUERY).matches) {
         return;
       }
 
@@ -1101,6 +1164,11 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
       }
       // 只有目标 workspace 已经激活或补开成功后才关闭 Automations，避免失败时看起来像跳转成功。
       showChatMainView();
+      // On phone-sized WebUI the sidebar pushes the content column away; once a session
+      // is opened the content is the focus, so close the sidebar (no-op when closed).
+      if (phoneSidebarBreakpointActiveRef.current && phoneSidebarVisibleRef.current) {
+        phoneSidebarToggleRef.current();
+      }
       if (typeof expectedUnreadAt === "number") {
         handleSelectTask(targetWorkspacePath, taskId, targetWorkspaceIdentity, expectedUnreadAt);
       } else {
@@ -1714,15 +1782,24 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
         // Use capture phase so the phone gesture cannot be swallowed by nested
         // ResizablePanel/scroll containers before it reaches the workspace shell.
         onPointerDownCapture={handlePhoneSidebarEdgeSwipeStart}
-        onPointerMoveCapture={handlePhoneSidebarEdgeSwipeMove}
         onPointerUpCapture={finishPhoneSidebarEdgeSwipe}
         onPointerCancelCapture={(event) => finishPhoneSidebarEdgeSwipe(event, true)}
-        onTouchStart={handlePhoneSidebarTouchStart}
-        onTouchMove={handlePhoneSidebarTouchMove}
-        onTouchEnd={handlePhoneSidebarTouchEnd}
-        onTouchCancel={() => {
-          phoneSidebarTouchSwipeStartRef.current = null;
+        onClickCapture={(event) => {
+          // One-shot guard: a swipe that just closed the sidebar may have ended on a
+          // tappable row; swallow the click synthesized right after the toggle.
+          if (Date.now() < phoneSidebarSwipeCloseClickGuardUntilRef.current) {
+            event.stopPropagation();
+            event.preventDefault();
+            phoneSidebarSwipeCloseClickGuardUntilRef.current = 0;
+          }
         }}
+        {...(supportsNativePointerEvents
+          ? {}
+          : {
+              onTouchStart: handlePhoneSidebarTouchStart,
+              onTouchEnd: handlePhoneSidebarTouchEnd,
+              onTouchCancel: handlePhoneSidebarTouchCancel,
+            })}
       >
         <div
           ref={workspaceSidebarPanelElementRef}
@@ -1730,7 +1807,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
           data-workspace-sidebar-panel="true"
           id="sidebar"
           className={cn(
-            "w-[var(--workspace-sidebar-panel-width)] max-w-[50%] flex-none overflow-hidden duration-200 ease-out transition-[width,opacity] data-[workspace-sidebar-resizing=true]:transition-opacity max-md:relative max-md:z-30 max-md:h-full max-md:max-w-none max-md:shadow-2xl",
+            "w-[var(--workspace-sidebar-panel-width)] max-w-[50%] flex-none overflow-hidden duration-200 ease-out transition-[width,opacity] data-[workspace-sidebar-resizing=true]:transition-opacity max-md:relative max-md:z-30 max-md:h-full max-md:max-w-[100vw] max-md:shadow-2xl",
             // 拖动侧栏宽度时如果继续过渡 width，会让指针移动和实际宽度之间产生滞后。
             // 拖拽 active 通过 DOM 标记切 transition，避免 pointerdown/up 为了切 class 重渲染整棵 workspace。
             isSidebarPanelVisible
@@ -1823,7 +1900,7 @@ export const WorkspaceShellLayout = memo(function WorkspaceShellLayoutComponent(
             onPointerMove={handleWorkspaceSidebarResizeMove}
             onPointerUp={(event) => finishWorkspaceSidebarResize(event)}
             className={cn(
-              "group/handle relative z-10 flex h-full w-1 shrink-0 touch-none cursor-ew-resize items-center justify-center bg-transparent outline-none [app-region:no-drag] focus:outline-none focus-visible:ring-0",
+              "group/handle relative z-10 flex h-full w-1 shrink-0 touch-none cursor-ew-resize items-center justify-center bg-transparent outline-none [app-region:no-drag] focus:outline-none focus-visible:ring-0 max-md:hidden",
               "after:pointer-events-none after:absolute after:rounded-full after:bg-foreground-subtlest/50 after:opacity-0 after:transition-opacity after:content-[''] after:inset-y-[var(--workspace-panel-radius)] after:w-0.5",
               "hover:after:opacity-100 data-[separator=hover]:after:opacity-100 data-[separator=active]:after:opacity-100 focus-visible:after:opacity-100 [[data-workspace-sidebar-resizing=true]_&]:after:opacity-100",
               hasDesktopPanelInset && "after:inset-y-[var(--workspace-resize-handle-inset)]",

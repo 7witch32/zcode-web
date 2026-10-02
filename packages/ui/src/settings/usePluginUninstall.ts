@@ -55,9 +55,15 @@ export function usePluginUninstall({
 
   const confirmUninstall = useCallback(async () => {
     if (!pendingId) return;
-    await uninstallPlugin(pendingId, pluginService);
-    await onAfterUninstall();
-    setPendingId(null);
+    try {
+      await uninstallPlugin(pendingId, pluginService);
+      await onAfterUninstall();
+    } finally {
+      // A failure anywhere in the uninstall chain must still close the confirm
+      // dialog — an open dialog blocks every later confirmation flow. The plugin
+      // store's error state (rendered as the section banner) surfaces the cause.
+      setPendingId(null);
+    }
   }, [pluginService, onAfterUninstall, pendingId, uninstallPlugin]);
 
   return { pendingPlugin, uninstalling, requestUninstall, cancelUninstall, confirmUninstall };

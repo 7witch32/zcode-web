@@ -1615,6 +1615,7 @@ const enUS: Record<string, string> = {
   "workspaceSidebar.workspaces": "Tasks",
   "workspaceSidebar.archivedTasks": "Archived",
   "workspaceSidebar.taskViewOptions": "Filter and sort",
+  "workspaceSidebar.commandCenter": "Command Center",
   "workspaceSidebar.organize": "View",
   "workspaceSidebar.organizeGrouped": "Group",
   "workspaceSidebar.organizeByProject": "Project",
@@ -2076,6 +2077,9 @@ const enUS: Record<string, string> = {
   "settings.shortcuts.recording": "Press new combination…",
   "settings.shortcuts.recordingHint":
     "Esc to cancel · Backspace to reset · press a new combo after a conflict",
+  "settings.shortcuts.cancelRecording": "Cancel recording",
+  "settings.shortcuts.externalKeyboardHint":
+    "Recording needs a physical keyboard — connect a Bluetooth keyboard, then tap a binding to record it.",
   "settings.shortcuts.conflictReserved": "This combination is reserved by the system",
   "settings.shortcuts.conflictOccupied": 'Already used by "{command}"',
   "settings.shortcuts.clearConflict":
@@ -2286,11 +2290,13 @@ const enUS: Record<string, string> = {
   "settings.dataBaseDirPlaceholder": "Default: user home directory",
   "settings.dataBaseDirBrowse": "Choose folder",
   "settings.dataBaseDirSave": "Save",
+  "settings.actionFailed": "The change could not be saved. Please try again.",
   "settings.dataBaseDirCopying": "Copying data, please do not close the app...",
   "settings.dataBaseDirCopyFailed": "Data copy failed. Path was not changed.",
   "settings.dataBaseDirForbiddenInstallDir":
     "The data directory cannot be the ZCode installation folder on Windows. Choose a folder outside the app install location.",
   "settings.dataBaseDirRestartRequired": "Data saved. Please restart the app to take effect.",
+  "settings.dataBaseDirManagedByServer": "Managed by the server environment (ZCODE_DATA_BASE_DIR).",
   "settings.locale.system": "System default",
   "settings.locale.zh-CN": "中文简体",
   "settings.locale.en-US": "English",
@@ -2650,6 +2656,9 @@ const enUS: Record<string, string> = {
   "settings.mcp.failure.connection_failed": "Failed to connect to the MCP server. Try again later.",
   "settings.mcp.failure.technicalDetails": "Details",
   "settings.mcp.deleteConfirmTitle": 'Delete MCP server "{name}"?',
+  "settings.mcp.loadFailed": "Couldn't load the MCP configuration.",
+  "settings.mcp.saveFailed": "Couldn't save the MCP server configuration.",
+  "settings.mcp.deleteFailed": "Couldn't delete the MCP server configuration.",
   "settings.mcp.deleteConfirmDescription":
     "This action cannot be undone. The server configuration will be removed from the file.",
   "settings.mcp.deleteConfirmAction": "Delete server",
@@ -3606,6 +3615,7 @@ const enUS: Record<string, string> = {
   "settings.usage.healthLiteDecode": "Lite peak average decode speed",
   "settings.usage.refresh": "Refresh",
   "settings.usage.loadingTitle": "Computing usage",
+  "settings.usage.providerSettingsLoadFailedTitle": "Couldn't load provider settings",
   "settings.usage.appUsageLoadingDescription":
     "Reading local app session history, so it can take a moment.",
   "settings.usage.codingPlanLoadingDescription":

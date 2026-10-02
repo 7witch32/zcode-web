@@ -1,5 +1,5 @@
 /* oxlint-disable eslint(max-lines) */
-import { ArrowLeft, Rocket, type LucideIcon } from "lucide-react";
+import { ArrowLeft, Rocket, Settings2, type LucideIcon } from "lucide-react";
 import {
   useCallback,
   useEffect,
@@ -104,6 +104,7 @@ import {
   resolveSettingsSectionForPlatform,
 } from "./settingsPageHelpers.js";
 import { AppearanceSectionContent } from "./settingsCodePreview.js";
+import { buildSettingsSectionChipItems } from "./settings/settingsSectionChipItems.js";
 import type { SettingsSectionId } from "@/lib/settingsNavigation.js";
 import { requestPluginStoreOpen } from "@/lib/pluginStoreNavigation.js";
 import {
@@ -267,6 +268,97 @@ function SettingsSidebarButton({
   );
 }
 
+type SettingsSectionGroups = ReturnType<typeof createSettingsPageConfig>["settingsSectionGroups"];
+
+// Phone-sized screens hide the desktop sidebar entirely (the aside is max-md:hidden),
+// so this horizontal chip bar is the only section navigation there. It must stay in
+// sync with the sidebar: same section ordering from createSettingsPageConfig, same
+// click side effects (handleSettingsSectionSelect / handleSettingsOnboardingOpen /
+// handleSettingsBackClick in SettingsPage), same testids.
+function SettingsSectionChipNav({
+  groups,
+  activeSection,
+  onSectionSelect,
+  onOnboardingOpen,
+  onBack,
+  backLabel,
+  navLabel,
+  onboardingLabel,
+}: {
+  groups: SettingsSectionGroups;
+  activeSection: SettingsSectionId;
+  onSectionSelect: (sectionId: SettingsSectionId) => void;
+  onOnboardingOpen: () => void;
+  onBack?: () => void;
+  backLabel: string;
+  navLabel: string;
+  onboardingLabel: string;
+}) {
+  const { intl } = useZCodeIntl();
+  const chipItems = buildSettingsSectionChipItems(groups);
+  const sectionIconById = new Map<SettingsSectionId, LucideIcon>(
+    groups.flatMap((group) => group.sections.map((section) => [section.id, section.icon] as const)),
+  );
+  return (
+    <nav
+      aria-label={navLabel}
+      className="hidden max-md:sticky max-md:top-0 max-md:z-20 max-md:block max-md:bg-background"
+    >
+      <div className="flex items-center gap-2 overflow-x-auto px-4 py-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        {onBack ? (
+          <button
+            type="button"
+            data-testid={TID_SETTINGS_BACK_BUTTON}
+            aria-label={backLabel}
+            onClick={onBack}
+            className="flex size-8 shrink-0 items-center justify-center rounded-full text-foreground-subtle transition-colors hover:bg-surface-hover hover:text-foreground"
+          >
+            <ArrowLeft className="size-4" aria-hidden="true" />
+          </button>
+        ) : null}
+        {chipItems.map((item) => {
+          if (item.kind === "onboarding") {
+            return (
+              <button
+                key="onboarding"
+                type="button"
+                aria-label={onboardingLabel}
+                onClick={onOnboardingOpen}
+                className="flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border border-dashed border-border px-3 text-ui-base text-foreground-subtle transition-colors hover:border-border-hover hover:text-foreground"
+              >
+                <Rocket className="size-4 shrink-0" aria-hidden="true" />
+                <span>{onboardingLabel}</span>
+              </button>
+            );
+          }
+          const Icon = sectionIconById.get(item.id) ?? Settings2;
+          const label = intl.formatMessage({ id: item.titleId });
+          const isActive = activeSection === item.id;
+          return (
+            <button
+              key={item.id}
+              type="button"
+              data-testid={testId(TID_SETTINGS_SECTION_NAV, item.id)}
+              aria-current={isActive ? "page" : undefined}
+              aria-label={label}
+              onClick={() => onSectionSelect(item.id)}
+              className={cn(
+                "flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full border px-3 text-ui-base transition-colors",
+                isActive
+                  ? "border-transparent bg-surface-hover text-foreground"
+                  : "border-border text-foreground-subtle hover:bg-surface-hover hover:text-foreground",
+              )}
+            >
+              <Icon className="size-4 shrink-0 text-current" aria-hidden="true" />
+              <span className="truncate">{label}</span>
+            </button>
+          );
+        })}
+      </div>
+    </nav>
+  );
+}
+
 export function SettingsPage({
   isDesktop,
   isWindowsDesktop,
@@ -353,6 +445,13 @@ export function SettingsPage({
       ? usageProviderSettingsRead.state.view
       : null;
   const usageProviderSettingsLoading = usageProviderSettingsRead.state.status !== "ready";
+  // Provider settings 读取失败必须与 loading 区分开：error 被算进 loading 会让
+  // Coding Plan usage 页永远停在加载态。这里单独暴露失败态与重试入口给 usage 面板。
+  const usageProviderSettingsFailed = usageProviderSettingsRead.state.status === "error";
+  const usageProviderSettingsError =
+    usageProviderSettingsRead.state.status === "error"
+      ? usageProviderSettingsRead.state.error.message
+      : null;
   const usageZaiProvider = usageProviderSettingsView?.providers.find(
     (provider) => provider.providerId === BUILTIN_MODEL_PROVIDER_IDS.zaiIndividualCodingPlan,
   );
@@ -590,7 +689,10 @@ export function SettingsPage({
     );
   }, [selectedUsageCodingPlanSource, usageActiveTab, usageCodingPlanSources]);
   const setNewUserOnboardingOpen = useZCodeStore((state) => state.setNewUserOnboardingOpen);
-  const requestOnboardingDialog = () => setNewUserOnboardingOpen(true);
+  const requestOnboardingDialog = useCallback(
+    () => setNewUserOnboardingOpen(true),
+    [setNewUserOnboardingOpen],
+  );
   const setActiveSettingsSection = useCallback(
     (section: SettingsSectionId, fallbackSection: SettingsSectionId = activeSection) => {
       const resolvedSection = resolveSettingsSection(section, fallbackSection);
@@ -599,6 +701,56 @@ export function SettingsPage({
     },
     [activeSection],
   );
+  // Shared by the desktop sidebar and the phone chip bar so both entry points run the
+  // same telemetry wrapper and navigation side effects.
+  const handleSettingsSectionSelect = useCallback(
+    (sectionId: SettingsSectionId) => {
+      runUserAction({
+        input: {
+          featureId: "settings.navigation",
+          action: "open_section",
+          trigger: "button",
+        },
+        operation: () => {
+          setPluginNavigationOrigin(undefined);
+          setSettingsSectionNavigationVersion((version) => version + 1);
+          setActiveSettingsSection(sectionId);
+        },
+        completed: { resultSource: "local_commit", sectionId },
+        failureStage: "navigation_commit",
+      });
+    },
+    [setActiveSettingsSection],
+  );
+  const handleSettingsOnboardingOpen = useCallback(() => {
+    runUserAction({
+      input: {
+        featureId: "settings.navigation",
+        action: "open_onboarding",
+        trigger: "button",
+      },
+      operation: requestOnboardingDialog,
+      completed: { resultSource: "local_commit" },
+      failureStage: "dialog_open",
+    });
+  }, [requestOnboardingDialog]);
+  const handleSettingsBackClick = useCallback(() => {
+    runUserAction({
+      input: {
+        featureId: "settings.navigation",
+        action: "back_to_workspace",
+        trigger: "button",
+      },
+      operation: () => {
+        if (pluginNavigationOrigin === "plugin-store") {
+          requestPluginStoreOpen("user");
+        }
+        onBack?.();
+      },
+      completed: { resultSource: "local_commit" },
+      failureStage: "navigation_commit",
+    });
+  }, [onBack, pluginNavigationOrigin]);
   const handleOpenCodingPlanUpgradeSettings = useCallback(
     (
       providerId: string,
@@ -831,9 +983,21 @@ export function SettingsPage({
     setReceivePreviewUpdates(sharedSettings.receivePreviewUpdates ?? false);
     setAutoDownloadAndInstallUpdates(sharedSettings.autoDownloadAndInstallUpdates ?? false);
   }, [sharedSettings]);
+  // 通用开关/输入保存没有各自的错误 UI：失败时 toast 一次让用户知道改动没有生效。
+  // 这里必须继续 rethrow——紧随其后的 setState 依赖 rejection 被跳过，控件才能
+  // 弹回真实状态；吞掉异常会把保存失败伪装成成功。调用侧 void 触发的
+  // unhandled rejection 仅为控制台噪音，不产生用户可见影响。
+  const runToastableSettingsActionAsync = useCallback(
+    <T,>(options: Parameters<typeof runSettingsActionAsync<T>>[0]): Promise<T> =>
+      runSettingsActionAsync(options).catch((error) => {
+        toast(intl.formatMessage({ id: "settings.actionFailed" }));
+        throw error;
+      }),
+    [intl],
+  );
   const handleTerminalInheritSystemProfileChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.terminal",
         action: "toggle_system_profile",
         trigger: "switch",
@@ -850,7 +1014,7 @@ export function SettingsPage({
   const handleTerminalFontFamilyChange = useCallback(
     async (fontFamily: string) => {
       const normalizedFontFamily = fontFamily.trim();
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.terminal",
         action: "save_font_family",
         trigger: "button",
@@ -864,7 +1028,7 @@ export function SettingsPage({
   );
   const handleIntegratedTerminalShellChange = useCallback(
     async (selection: IntegratedTerminalShellSelection) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.terminal",
         action: "change_shell",
         trigger: "select",
@@ -880,7 +1044,7 @@ export function SettingsPage({
   );
   const handleNativeSearchEnhancementsEnabledChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.search",
         action: "toggle_native_search",
         trigger: "switch",
@@ -895,7 +1059,7 @@ export function SettingsPage({
   );
   const handleAskUserQuestionAutoResolutionEnabledChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.conversation",
         action: "toggle_ask_user_auto_resolution",
         trigger: "switch",
@@ -910,7 +1074,7 @@ export function SettingsPage({
   );
   const handleModelIoFullRetentionEnabledChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.conversation",
         action: "toggle_model_io_retention",
         trigger: "switch",
@@ -925,7 +1089,7 @@ export function SettingsPage({
   );
   const handleMemoryEnabledChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.memory",
         action: "toggle_memory",
         trigger: "switch",
@@ -949,7 +1113,7 @@ export function SettingsPage({
   const handleHttpProxyChange = useCallback(
     async (proxy: string) => {
       const normalizedProxy = proxy.trim();
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.network",
         action: "save_http_proxy",
         trigger: "button",
@@ -976,7 +1140,7 @@ export function SettingsPage({
         .map((token) => token.trim())
         .filter(Boolean)
         .join(",");
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.network",
         action: "save_no_proxy",
         trigger: "button",
@@ -995,7 +1159,7 @@ export function SettingsPage({
   const handleHttpProxyCaCertPathChange = useCallback(
     async (caCertPath: string) => {
       const normalizedCaCertPath = caCertPath.trim();
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.network",
         action: "save_ca_certificate",
         trigger: "button",
@@ -1017,6 +1181,8 @@ export function SettingsPage({
   );
   const handleDataBaseDirChange = useCallback(
     async (dir: string) => {
+      // 数据目录有专属错误 UI（DataBaseDirControl 的 saveState），保留 rethrow 让
+      // 控件自己展示具体失败原因，不走通用 toast。
       await runSettingsActionAsync({
         featureId: "settings.storage",
         action: "change_data_directory",
@@ -1032,7 +1198,7 @@ export function SettingsPage({
   );
   const handleTaskAutoArchiveEnabledChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.task",
         action: "toggle_auto_archive",
         trigger: "switch",
@@ -1048,7 +1214,7 @@ export function SettingsPage({
   );
   const handleTaskAutoArchiveOlderThanDaysChange = useCallback(
     async (days: number) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.task",
         action: "change_auto_archive_days",
         trigger: "select",
@@ -1061,7 +1227,7 @@ export function SettingsPage({
   );
   const handleCloseToTrayOnWindowsChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.desktop",
         action: "toggle_close_to_tray",
         trigger: "switch",
@@ -1079,7 +1245,7 @@ export function SettingsPage({
   // keep-awake：走 useSettings 统一写盘 + syncAppSettings，和 Automations/创建页入口共享同一状态源。
   const handleKeepAwakeWhileRunningChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.desktop",
         action: "toggle_keep_awake",
         trigger: "switch",
@@ -1094,7 +1260,7 @@ export function SettingsPage({
   );
   const handleDesktopChromiumHardwareAccelerationChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.desktop",
         action: "toggle_hardware_acceleration",
         trigger: "switch",
@@ -1117,7 +1283,7 @@ export function SettingsPage({
   );
   const handleEmbeddedBrowserAllowInsecureCertificatesChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.browser",
         action: "toggle_insecure_certificates",
         trigger: "switch",
@@ -1141,7 +1307,7 @@ export function SettingsPage({
   );
   const handleReceivePreviewUpdatesChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.update",
         action: "toggle_preview_updates",
         trigger: "switch",
@@ -1157,7 +1323,7 @@ export function SettingsPage({
   );
   const handleAutoDownloadAndInstallUpdatesChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.update",
         action: "toggle_auto_update",
         trigger: "switch",
@@ -1173,7 +1339,7 @@ export function SettingsPage({
   );
   const handleMessageStreamShowReasoningChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.conversation",
         action: "toggle_show_reasoning",
         trigger: "switch",
@@ -1189,7 +1355,7 @@ export function SettingsPage({
   );
   const handleMessageStreamShowTodosChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.conversation",
         action: "toggle_show_todos",
         trigger: "switch",
@@ -1205,7 +1371,7 @@ export function SettingsPage({
   );
   const handleToolGroupingExploreEnabledChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.tool_grouping",
         action: "toggle_explore_grouping",
         trigger: "switch",
@@ -1221,7 +1387,7 @@ export function SettingsPage({
   );
   const handleToolGroupingTerminalEnabledChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.tool_grouping",
         action: "toggle_terminal_grouping",
         trigger: "switch",
@@ -1237,7 +1403,7 @@ export function SettingsPage({
   );
   const handleToolGroupingChangesEnabledChange = useCallback(
     async (enabled: boolean) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.tool_grouping",
         action: "toggle_changes_grouping",
         trigger: "switch",
@@ -1253,7 +1419,7 @@ export function SettingsPage({
   );
   const handleZCodeInteractionBehaviorChange = useCallback(
     async (behavior: ZCodeInteractionBehavior) => {
-      await runSettingsActionAsync({
+      await runToastableSettingsActionAsync({
         featureId: "settings.conversation",
         action: "change_interaction_behavior",
         trigger: "select",
@@ -1372,7 +1538,8 @@ export function SettingsPage({
           data-active-section={activeSection}
           // 隐式 auto 行会按 Memory viewer 的内容高度撑出窗口，随后被 DesktopWindowFrame 裁切且没有滚动条。
           // 固定为单个 minmax(0, 1fr) 行，让普通设置页和内部滚动 viewer 都以窗口剩余高度为边界。
-          className="relative grid h-screen min-h-full w-full grid-cols-[68px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] lg:grid-cols-[268px_minmax(0,1fr)]"
+          // zcode-settings-page scopes the mobile input focus-zoom guard in styles.css.
+          className="zcode-settings-page relative grid h-screen min-h-full w-full grid-cols-[68px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] max-md:grid-cols-1 lg:grid-cols-[268px_minmax(0,1fr)]"
         >
           {isWindowsDesktop ? <WindowsTopLeftLogo /> : null}
 
@@ -1385,7 +1552,7 @@ export function SettingsPage({
               <DesktopWindowControls />
             </div>
           ) : null}
-          <aside className="min-w-0">
+          <aside className="min-w-0 max-md:hidden">
             <div className="flex h-full flex-col">
               <div className="h-12 [app-region:drag]"></div>
               <div className="px-2 pb-3 pt-3">
@@ -1406,23 +1573,7 @@ export function SettingsPage({
                         id: "workspace.backToWorkspace",
                       })}
                       className="m-1 w-[calc(100%-0.5rem)] justify-start gap-2 rounded-xl px-1.5 text-foreground-subtle hover:bg-surface-hover hover:text-foreground max-lg:m-1 max-lg:size-10 max-lg:justify-center max-lg:px-0"
-                      onClick={() => {
-                        runUserAction({
-                          input: {
-                            featureId: "settings.navigation",
-                            action: "back_to_workspace",
-                            trigger: "button",
-                          },
-                          operation: () => {
-                            if (pluginNavigationOrigin === "plugin-store") {
-                              requestPluginStoreOpen("user");
-                            }
-                            onBack?.();
-                          },
-                          completed: { resultSource: "local_commit" },
-                          failureStage: "navigation_commit",
-                        });
-                      }}
+                      onClick={handleSettingsBackClick}
                     >
                       <ArrowLeft className="size-4" />
                       <span className="max-lg:sr-only">
@@ -1480,22 +1631,7 @@ export function SettingsPage({
                               active={isActive}
                               aria-current={isActive ? "page" : undefined}
                               data-testid={testId(TID_SETTINGS_SECTION_NAV, id)}
-                              onClick={() => {
-                                runUserAction({
-                                  input: {
-                                    featureId: "settings.navigation",
-                                    action: "open_section",
-                                    trigger: "button",
-                                  },
-                                  operation: () => {
-                                    setPluginNavigationOrigin(undefined);
-                                    setSettingsSectionNavigationVersion((version) => version + 1);
-                                    setActiveSettingsSection(id);
-                                  },
-                                  completed: { resultSource: "local_commit", sectionId: id },
-                                  failureStage: "navigation_commit",
-                                });
-                              }}
+                              onClick={() => handleSettingsSectionSelect(id)}
                             >
                               <span className="truncate text-ui-base text-foreground">{label}</span>
                             </SettingsSidebarButton>
@@ -1510,18 +1646,7 @@ export function SettingsPage({
                   icon={Rocket}
                   label={intl.formatMessage({ id: "settings.onboarding" })}
                   className="mt-4 border border-dashed border-border hover:border-border-hover"
-                  onClick={() => {
-                    runUserAction({
-                      input: {
-                        featureId: "settings.navigation",
-                        action: "open_onboarding",
-                        trigger: "button",
-                      },
-                      operation: requestOnboardingDialog,
-                      completed: { resultSource: "local_commit" },
-                      failureStage: "dialog_open",
-                    });
-                  }}
+                  onClick={handleSettingsOnboardingOpen}
                 >
                   <span className="text-ui-base text-foreground">
                     {intl.formatMessage({ id: "settings.onboarding" })}
@@ -1614,6 +1739,16 @@ export function SettingsPage({
                     </div>
                   </div>
                   <main className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+                    <SettingsSectionChipNav
+                      groups={settingsSectionGroups}
+                      activeSection={activeSection}
+                      onSectionSelect={handleSettingsSectionSelect}
+                      onOnboardingOpen={handleSettingsOnboardingOpen}
+                      onBack={onBack ? handleSettingsBackClick : undefined}
+                      backLabel={intl.formatMessage({ id: "workspace.backToWorkspace" })}
+                      navLabel={intl.formatMessage({ id: "settings.navLabel" })}
+                      onboardingLabel={intl.formatMessage({ id: "settings.onboarding" })}
+                    />
                     <div
                       className={cn(
                         SETTINGS_FRAME_CONTENT_CLASSNAME,
@@ -1885,7 +2020,11 @@ export function SettingsPage({
                         ) : activeSection === "usage" ? (
                           <UsageStatsSection
                             activeTab={usageActiveTab}
-                            providerSourcesLoading={usageProviderSettingsLoading}
+                            providerSourcesLoading={
+                              usageProviderSettingsLoading && !usageProviderSettingsFailed
+                            }
+                            providerSourcesError={usageProviderSettingsError}
+                            onRetryProviderSources={usageProviderSettingsRead.reload}
                             selectedCodingPlanSource={selectedUsageCodingPlanSource}
                             workspaceIdentity={activeWorkspaceIdentity}
                             workspacePath={activeWorkspacePath ?? undefined}

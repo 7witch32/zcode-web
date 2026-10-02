@@ -243,18 +243,21 @@ export function GeneralSectionContent({
     }
   }, []);
 
-  const handleRevokePushDevice = useCallback(async (deviceId: string) => {
-    setPushBusy(true);
-    setPushError(null);
-    try {
-      await revokeWebPushDevice(deviceId);
-      await refreshPushDevices();
-    } catch (error) {
-      setPushError(error instanceof Error ? error.message : "Unable to revoke push device");
-    } finally {
-      setPushBusy(false);
-    }
-  }, [refreshPushDevices]);
+  const handleRevokePushDevice = useCallback(
+    async (deviceId: string) => {
+      setPushBusy(true);
+      setPushError(null);
+      try {
+        await revokeWebPushDevice(deviceId);
+        await refreshPushDevices();
+      } catch (error) {
+        setPushError(error instanceof Error ? error.message : "Unable to revoke push device");
+      } finally {
+        setPushBusy(false);
+      }
+    },
+    [refreshPushDevices],
+  );
   // 部分 SSR 单测会用精简 props 直接渲染本组件，新增终端设置项后旧 helper 未必同步传值。
   // 这里把运行时缺省值兜到“继承系统 profile”，避免 undefined.trim() 把无关测试打断。
   const [localTerminalFontFamily, setLocalTerminalFontFamily] = useState(terminalFontFamily);
@@ -371,7 +374,7 @@ export function GeneralSectionContent({
             >
               <SelectTrigger
                 size="lg"
-                className="w-[260px] min-w-0 justify-between"
+                className="w-full max-w-[260px] min-w-0 justify-between"
                 data-testid={TID_SETTINGS_LOCALE_SELECT_TRIGGER}
               >
                 <SelectValue />
@@ -490,7 +493,7 @@ export function GeneralSectionContent({
                   void handleIntegratedTerminalShellChange(value);
                 }}
               >
-                <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
+                <SelectTrigger size="lg" className="w-full max-w-[260px] min-w-0 justify-between">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -724,7 +727,12 @@ export function GeneralSectionContent({
               pushSupported ? (
                 pushDevices.length > 0 ? (
                   <div className="flex items-center gap-2">
-                    <Button type="button" size="lg" disabled={pushBusy} onClick={() => void handleTestPush()}>
+                    <Button
+                      type="button"
+                      size="lg"
+                      disabled={pushBusy}
+                      onClick={() => void handleTestPush()}
+                    >
                       {intl.formatMessage({ id: "settings.pushNotificationsTest" })}
                     </Button>
                     <Button
@@ -738,12 +746,19 @@ export function GeneralSectionContent({
                     </Button>
                   </div>
                 ) : (
-                  <Button type="button" size="lg" disabled={pushBusy} onClick={() => void handleEnablePush()}>
+                  <Button
+                    type="button"
+                    size="lg"
+                    disabled={pushBusy}
+                    onClick={() => void handleEnablePush()}
+                  >
                     {intl.formatMessage({ id: "settings.pushNotificationsEnable" })}
                   </Button>
                 )
               ) : (
-                <SettingsBadge>{intl.formatMessage({ id: "settings.pushNotificationsUnsupported" })}</SettingsBadge>
+                <SettingsBadge>
+                  {intl.formatMessage({ id: "settings.pushNotificationsUnsupported" })}
+                </SettingsBadge>
               )
             }
             detail={
@@ -753,7 +768,10 @@ export function GeneralSectionContent({
                     <div className="flex items-center justify-between gap-3 text-ui-sm">
                       <span className="text-foreground-subtle">
                         {device.deviceName ||
-                          intl.formatMessage({ id: "settings.pushNotificationsDevice" }, { id: device.deviceId.slice(0, 8) })}
+                          intl.formatMessage(
+                            { id: "settings.pushNotificationsDevice" },
+                            { id: device.deviceId.slice(0, 8) },
+                          )}
                       </span>
                       {/* 本机 device 的操作在上方的 Test/Disable 按钮里；这里只给"其他设备"
                           留 Revoke（清理旧安装的残留注册），避免同一操作出现两排按钮。 */}
@@ -788,8 +806,11 @@ export function GeneralSectionContent({
                         {intl.formatMessage({ id: "settings.pushNotificationsNoReport" })}
                       </div>
                     )}
-                    {device.lastDiagnosticDetail && device.lastDiagnosticStage !== "notification_shown" ? (
-                      <div className="text-ui-xs text-foreground-subtle">{device.lastDiagnosticDetail}</div>
+                    {device.lastDiagnosticDetail &&
+                    device.lastDiagnosticStage !== "notification_shown" ? (
+                      <div className="text-ui-xs text-foreground-subtle">
+                        {device.lastDiagnosticDetail}
+                      </div>
                     ) : null}
                   </div>
                 ))}
@@ -854,7 +875,7 @@ export function GeneralSectionContent({
                 void onZCodeInteractionBehaviorChange(value as ZCodeInteractionBehavior);
               }}
             >
-              <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
+              <SelectTrigger size="lg" className="w-full max-w-[260px] min-w-0 justify-between">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1009,7 +1030,7 @@ export function GeneralSectionContent({
               }}
               disabled={!taskAutoArchiveEnabled}
             >
-              <SelectTrigger size="lg" className="w-[260px] min-w-0 justify-between">
+              <SelectTrigger size="lg" className="w-full max-w-[260px] min-w-0 justify-between">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -1033,12 +1054,21 @@ export function GeneralSectionContent({
             id: "settings.dataBaseDirDescription",
           })}
           control={
-            <DataBaseDirControl
-              dataBaseDir={dataBaseDir}
-              defaultHomeDir={defaultHomeDir}
-              onDataBaseDirChange={onDataBaseDirChange}
-              onSelectDataBaseDir={onSelectDataBaseDir}
-            />
+            // On web deployments the data root is managed by the server environment
+            // (e.g. ZCODE_DATA_BASE_DIR in Docker). Browse no-ops there and Save
+            // would copy directories inside the server FS with no restart flow.
+            isDesktop ? (
+              <DataBaseDirControl
+                dataBaseDir={dataBaseDir}
+                defaultHomeDir={defaultHomeDir}
+                onDataBaseDirChange={onDataBaseDirChange}
+                onSelectDataBaseDir={onSelectDataBaseDir}
+              />
+            ) : (
+              <span className="text-ui-base text-foreground-subtle">
+                {intl.formatMessage({ id: "settings.dataBaseDirManagedByServer" })}
+              </span>
+            )
           }
         />
       </SettingsGroupCard>

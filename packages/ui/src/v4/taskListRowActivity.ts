@@ -37,6 +37,20 @@ export function getTaskListRowActivity(task: ZCodeTaskMeta): TaskListRowActivity
   return activity ?? null;
 }
 
+/**
+ * Remove the row activity sidecar. Merges that re-decide runtime authority (e.g. the
+ * global live-meta lane leaving "running") must strip the stale sidecar, otherwise the
+ * leading indicator keeps rendering the old spinner on a row that is no longer running.
+ */
+export function detachTaskListRowActivity<T extends ZCodeTaskMeta>(task: T): T {
+  if (!(TASK_LIST_ROW_ACTIVITY_FIELD in task)) {
+    return task;
+  }
+  const next = { ...task } as Partial<TaskListMetaWithActivity>;
+  delete next[TASK_LIST_ROW_ACTIVITY_FIELD];
+  return next as T;
+}
+
 /** 只采信 sessions-index 的实时 phase；tasks-index 残留 status=running 不能置顶历史任务。 */
 function isTaskListRowRunning(task: ZCodeTaskMeta): boolean {
   const phase = getTaskListRowActivity(task)?.phase;

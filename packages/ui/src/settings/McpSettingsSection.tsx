@@ -522,7 +522,7 @@ function PluginMcpServerList({
                   onClick={() => onOpenAuthorization?.(item)}
                 >
                   <ExternalLink className="size-4" aria-hidden="true" />
-                  <span className="hidden sm:inline">{openAuthorizationLabel}</span>
+                  <span>{openAuthorizationLabel}</span>
                 </Button>
               </div>
             ) : null}
@@ -607,6 +607,7 @@ export function McpSettingsSection({
   const addScopedMcpServer = useMcpStore((s) => s.addScopedMcpServer);
   const updateScopedMcpServer = useMcpStore((s) => s.updateScopedMcpServer);
   const deleteScopedMcpServer = useMcpStore((s) => s.deleteScopedMcpServer);
+  const mcpLastLoadError = useMcpStore((s) => s.lastLoadError);
   const updateServerStatus = useMcpStore((s) => s.updateServerStatus);
   const beginServerStatusListRefresh = useMcpStore((s) => s.beginServerStatusListRefresh);
   const markServerStatusListRefreshFailed = useMcpStore((s) => s.markServerStatusListRefreshFailed);
@@ -1252,6 +1253,8 @@ export function McpSettingsSection({
       activeWorkspaceIdentity,
     );
     if (!loaded) {
+      // 配置没加载成功时不能静默吞掉点击：用户需要知道保存没有发生。
+      toast(intl.formatMessage({ id: "settings.mcp.loadFailed" }));
       return;
     }
     const config = {
@@ -1263,9 +1266,22 @@ export function McpSettingsSection({
     const projectPath = formScopeKey === "user" ? undefined : activeWorkspacePath;
 
     if (prev) {
-      await updateScopedMcpServer(DEFAULT_MCP_SOURCE, prev.name, config, projectPath);
+      try {
+        await updateScopedMcpServer(DEFAULT_MCP_SOURCE, prev.name, config, projectPath);
+      } catch (error) {
+        // 落盘失败不能像成功一样关闭表单；保留输入让用户重试。
+        logger.warn("[mcp] save server failed", String(error));
+        toast(intl.formatMessage({ id: "settings.mcp.saveFailed" }));
+        return;
+      }
     } else {
-      await addScopedMcpServer(DEFAULT_MCP_SOURCE, form.name, config, projectPath);
+      try {
+        await addScopedMcpServer(DEFAULT_MCP_SOURCE, form.name, config, projectPath);
+      } catch (error) {
+        logger.warn("[mcp] add server failed", String(error));
+        toast(intl.formatMessage({ id: "settings.mcp.saveFailed" }));
+        return;
+      }
     }
 
     setShowForm(false);
@@ -1289,7 +1305,14 @@ export function McpSettingsSection({
       return;
     }
 
-    await deleteScopedMcpServer(server.source, server.name, server.projectPath);
+    try {
+      await deleteScopedMcpServer(server.source, server.name, server.projectPath);
+    } catch (error) {
+      // 删除落盘失败时保留列表与编辑状态，用户可以直接重试。
+      logger.warn("[mcp] delete server failed", String(error));
+      toast(intl.formatMessage({ id: "settings.mcp.deleteFailed" }));
+      return;
+    }
     setEditingServer(null);
     setShowForm(false);
     setEditorMode("form");
@@ -1445,7 +1468,24 @@ export function McpSettingsSection({
         </div>
       ) : null}
 
-      {!mcpProjectionReady ? (
+      {!mcpProjectionReady && mcpLastLoadError ? (
+        // 配置读取失败必须可见可重试：旧实现只渲染 loading，失败会永远转圈。
+        <div
+          className="flex items-center justify-between gap-3 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-ui-base text-destructive"
+          data-testid="settings-mcp-load-error"
+        >
+          <span className="min-w-0 break-words">{mcpLastLoadError}</span>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={refreshingStatusList}
+            onClick={() => void handleManualRefresh()}
+          >
+            {intl.formatMessage({ id: "common.retry" })}
+          </Button>
+        </div>
+      ) : !mcpProjectionReady ? (
         <PluginLoadingState label={intl.formatMessage({ id: "common.loading" })} />
       ) : hasEmptySearchResult ? (
         <PluginSearchEmptyState

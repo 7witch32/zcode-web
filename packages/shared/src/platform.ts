@@ -530,6 +530,13 @@ export interface IPlatformService {
   /** 当前平台的文件选择框是否能返回 agent 可访问的本地绝对路径 */
   canSelectFilePath?: boolean;
 
+  /**
+   * 平台种类：desktop = Electron 桌面宿主，web = 浏览器/服务器部署。
+   * UI 层用它跳过只有桌面宿主才注册的通道（如 window-controller live lane），
+   * 避免向 web server 订阅不存在的 channel。
+   */
+  readonly platformKind: "desktop" | "web";
+
   /** 打开系统目录选择框，返回选中路径或 null */
   selectDirectory(): Promise<string | null>;
 

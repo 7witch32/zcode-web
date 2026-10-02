@@ -26,7 +26,7 @@ import {
   TID_MODEL_PROVIDER_NAV_ITEM,
   testId,
 } from "@zcode/shared";
-import { useCallback, useMemo, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useState, type KeyboardEvent } from "react";
 import { ControlHintTooltip } from "@/ControlHintTooltip.js";
 import type { ModelProviderNavGroup, ModelProviderNavItem } from "./constants.js";
 import { useOptimisticReorder } from "./useOptimisticReorder.js";
@@ -34,6 +34,24 @@ import { renderModelProviderNavIcon } from "./utils.js";
 
 // 侧栏会裁切水平溢出；排序只改变纵向位置，拖动时也必须保持 x=0。
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({ ...transform, x: 0 });
+
+// Keep in sync with Tailwind's max-md variant and PHONE_SIDEBAR_MEDIA_QUERY in
+// WorkspaceShellLayout (width < 768px; 767.999 covers fractional-DPR viewports).
+const PHONE_NAV_MEDIA_QUERY = "(max-width: 767.999px)";
+
+function useIsPhoneViewport() {
+  const [isPhone, setIsPhone] = useState(() =>
+    typeof window !== "undefined" ? window.matchMedia(PHONE_NAV_MEDIA_QUERY).matches : false,
+  );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const query = window.matchMedia(PHONE_NAV_MEDIA_QUERY);
+    const onChange = (event: MediaQueryListEvent) => setIsPhone(event.matches);
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
+  }, []);
+  return isPhone;
+}
 
 function getSortableProviderId(
   item: ModelProviderNavItem,
@@ -113,7 +131,7 @@ function ModelProviderNavigationButton({
           }
           onSelectNavItem(item);
         }}
-        className={`relative box-border flex h-8 w-full items-center gap-2 rounded-lg border px-2 py-1 text-left text-ui-base font-medium transition-colors max-md:size-8 max-md:justify-center max-md:gap-0 max-md:px-0 ${
+        className={`relative box-border flex h-8 w-full items-center gap-2 rounded-lg border px-2 py-1 text-left text-ui-base font-medium transition-colors max-md:h-8 max-md:w-auto max-md:shrink-0 max-md:touch-auto max-md:whitespace-nowrap max-md:rounded-full max-md:px-3 ${
           isSelected
             ? "border-border-hover bg-card-selected text-foreground"
             : inactiveItemClassName
@@ -124,7 +142,7 @@ function ModelProviderNavigationButton({
         ) : showIcon ? (
           <span className="shrink-0 text-current">{renderModelProviderNavIcon(item)}</span>
         ) : null}
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 max-md:sr-only">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="min-w-0 truncate">{label}</span>
         </span>
         {"provider" in item ? (
@@ -195,7 +213,7 @@ function SortableModelProviderNavigationButton({
         {...attributes}
         {...listeners}
         onKeyDown={handleKeyDown}
-        className={`relative box-border flex h-8 w-full cursor-grab touch-pan-y select-none items-center gap-2 rounded-lg border px-2 py-1 text-left text-ui-base font-medium transition-colors active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 max-md:size-8 max-md:justify-center max-md:gap-0 max-md:px-0 ${
+        className={`relative box-border flex h-8 w-full cursor-grab touch-pan-y select-none items-center gap-2 rounded-lg border px-2 py-1 text-left text-ui-base font-medium transition-colors active:cursor-grabbing focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand/40 max-md:h-8 max-md:w-auto max-md:shrink-0 max-md:touch-auto max-md:whitespace-nowrap max-md:rounded-full max-md:px-3 ${
           isSelected
             ? "border-border-hover bg-card-selected text-foreground"
             : inactiveItemClassName
@@ -204,7 +222,7 @@ function SortableModelProviderNavigationButton({
         <span className="shrink-0 text-current" aria-hidden="true">
           {renderModelProviderNavIcon(item)}
         </span>
-        <span className="flex min-w-0 flex-1 items-center gap-1.5 max-md:sr-only">
+        <span className="flex min-w-0 flex-1 items-center gap-1.5">
           <span className="min-w-0 truncate">{label}</span>
         </span>
         {"provider" in item ? (
@@ -227,7 +245,7 @@ function PresetProviderCardNavigation({
   onSelectNavItem: (item: ModelProviderNavItem) => void;
 }) {
   return (
-    <div className="flex flex-col gap-2 max-md:items-center max-md:gap-1">
+    <div className="flex flex-col gap-2 max-md:flex-row max-md:items-center max-md:gap-2">
       {group.items.map((item) => (
         <ModelProviderNavigationButton
           key={item.key}
@@ -305,7 +323,7 @@ function SortableProviderNavigationGroup({
         items={[...optimisticOrder.renderedIds]}
         strategy={verticalListSortingStrategy}
       >
-        <div className="flex flex-col gap-1 max-md:items-center">
+        <div className="flex flex-col gap-1 max-md:flex-row max-md:items-center max-md:gap-2">
           {renderedItems.map((item) => {
             const providerId = getSortableProviderId(item, reorderableProviderIds);
             if (!providerId) {
@@ -376,20 +394,25 @@ export function ModelProviderSectionNavigation({
   onReorderProviderIds?: (providerIds: string[]) => Promise<void>;
   reorderableProviderIds?: ReadonlySet<string>;
 }) {
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
-    useSensor(KeyboardSensor, {
-      coordinateGetter: sortableKeyboardCoordinates,
-    }),
-  );
+  const isPhoneViewport = useIsPhoneViewport();
+  // Sensor hooks must run unconditionally; on phones we simply register none of them —
+  // drag-reorder would fight the horizontal chip scroller, so touch scroll wins there.
+  const pointerSensor = useSensor(PointerSensor, { activationConstraint: { distance: 6 } });
+  const keyboardSensor = useSensor(KeyboardSensor, {
+    coordinateGetter: sortableKeyboardCoordinates,
+  });
+  const sensors = useSensors(...(isPhoneViewport ? [] : [pointerSensor, keyboardSensor]));
 
   return (
     <aside className="px-1.5 py-3 md:py-2 md:px-2">
-      <div className="flex min-h-0 flex-col gap-3 max-md:gap-1">
+      <div className="flex min-h-0 flex-col gap-3 max-md:flex-row max-md:items-center max-md:gap-3 max-md:overflow-x-auto max-md:px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {navigationGroups
           .filter((group) => group.id !== "custom" || group.items.length > 0)
           .map((group) => (
-            <div key={group.id} className="flex flex-col gap-2 max-md:gap-1">
+            <div
+              key={group.id}
+              className="flex flex-col gap-2 max-md:flex-row max-md:items-center max-md:gap-2 max-md:shrink-0"
+            >
               <div className="flex h-7 items-center justify-between px-2 py-1 max-md:hidden">
                 <h3 className="text-ui-sm font-semibold text-foreground-subtlest">{group.title}</h3>
                 {shouldShowModelProviderGroupLoadingIndicator({

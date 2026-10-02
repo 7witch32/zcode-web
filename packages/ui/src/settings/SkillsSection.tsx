@@ -897,7 +897,7 @@ export function SkillsSection({
                       })}
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-x-6 gap-y-3">
+                <div className="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
                   <SkillDetailField
                     label={intl.formatMessage({
                       id: "settings.skills.detail.scope",

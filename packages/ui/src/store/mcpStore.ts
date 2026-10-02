@@ -68,6 +68,8 @@ interface McpStoreState {
   enabledStates: Record<string, boolean>;
   deletedPreloadMcpServers: Set<string>;
   isConfigLoaded: boolean;
+  /** 最近一次 loadMcpFromUserDirectory 的真实失败信息；成功加载即清空，供设置页显示错误+重试。 */
+  lastLoadError: string | null;
   currentSessionId: string | null;
   loadConfig: () => void;
   loadMcpFromUserDirectory: (
@@ -95,7 +97,7 @@ interface McpStoreState {
     config: McpServerConfig,
     projectPath?: string,
   ) => Promise<void>;
-  deleteScopedMcpServer: (source: McpSource, name: string, projectPath?: string) => void;
+  deleteScopedMcpServer: (source: McpSource, name: string, projectPath?: string) => Promise<void>;
   addZCodeAgentMcpServer: (name: string, config: McpServerConfig, projectPath?: string) => void;
   updateZCodeAgentMcpServer: (name: string, config: McpServerConfig, projectPath?: string) => void;
   deleteZCodeAgentMcpServer: (name: string, projectPath?: string) => void;
@@ -228,13 +230,10 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
       return;
     }
 
-    await persistCliMcpToUserDirectory(
-      mcpPlatformService,
-      payload,
-      resolveMcpDirectoryService(),
-    ).catch((error) => {
-      logger.warn(`[mcpStore] persist ${source} MCP failed`, String(error));
-    });
+    // 落盘是持久化边界：旧实现在这里吞掉错误，导致保存/删除失败时表单照常关闭、
+    // 看起来像成功。改为向上抛出，由设置页 toast 呈现；fire-and-forget 的调用方
+    // （preload 合并/删除）自行 .catch 保持原语义。
+    await persistCliMcpToUserDirectory(mcpPlatformService, payload, resolveMcpDirectoryService());
   }
 
   return {
@@ -247,6 +246,7 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
     enabledStates: {},
     deletedPreloadMcpServers: new Set(),
     isConfigLoaded: false,
+    lastLoadError: null,
     currentSessionId: null,
 
     loadConfig: () => {
@@ -303,6 +303,7 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
       loadMcpWorkspaceKey = latestWorkspaceKey;
       loadMcpPromise = (async () => {
         try {
+          set({ lastLoadError: null });
           logger.info(
             `[mcpStore] loadMcpFromUserDirectory workspace=${latestWorkspacePath ?? "<none>"} identity=${latestWorkspaceIdentity ?? "<none>"}`,
           );
@@ -335,6 +336,8 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
           // MCP 配置读取失败。只过滤该精确错误码，避免吞掉真实的目录或 RPC 故障。
           if (!isRemoteWorkspaceDisconnectedError(e)) {
             logger.warn("[mcpStore] loadMcpFromUserDirectory failed", String(e));
+            // 记录真实失败原因：设置页据此显示错误+重试，而不是永远停在 loading。
+            set({ lastLoadError: e instanceof Error ? e.message : String(e) });
           }
           return false;
         } finally {
@@ -402,10 +405,12 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
       });
       updateNativeServer(targetSource, name, config, projectPath);
     },
-    deleteScopedMcpServer: (source, name, projectPath) => {
+    deleteScopedMcpServer: async (source, name, projectPath) => {
       invalidateStatusListRequests();
       const targetSource: CliMcpSource = source === "mcp" ? "zcodeagentmcp" : source;
-      persistScopedChange(targetSource, {
+      // 先等落盘成功再更新本地列表：旧实现不等待 persist 就乐观移除，
+      // 写盘失败时行已消失但磁盘未变，看起来像删除成功。失败向上抛给设置页 toast。
+      await persistScopedChange(targetSource, {
         action: "delete",
         source: targetSource,
         name,
@@ -668,6 +673,9 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
           source: targetSource,
           name,
           config: cfg,
+        }).catch((error) => {
+          // fire-and-forget 预加载合并：失败只记日志，不阻塞本地状态。
+          logger.warn("[mcpStore] persist merged preload MCP failed", String(error));
         });
         changed = true;
       }
@@ -679,7 +687,12 @@ export const useMcpStore = create<McpStoreState>((set, get) => {
     deletePreloadedMcpServer: (source, name) => {
       const targetSource: CliMcpSource = source === "mcp" ? "zcodeagentmcp" : source;
       const key = makeServerId(targetSource, name);
-      persistScopedChange(targetSource, { action: "delete", source: targetSource, name });
+      persistScopedChange(targetSource, { action: "delete", source: targetSource, name }).catch(
+        (error) => {
+          // fire-and-forget 预加载删除：失败只记日志，不阻塞本地状态。
+          logger.warn("[mcpStore] persist delete preloaded MCP failed", String(error));
+        },
+      );
       set((state) => {
         const nextDeleted = new Set(state.deletedPreloadMcpServers);
         nextDeleted.add(key);

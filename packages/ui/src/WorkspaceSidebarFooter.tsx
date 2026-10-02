@@ -177,6 +177,7 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
     settingsButtonMode === "back"
       ? intl.formatMessage({ id: "workspace.backToWorkspace" })
       : intl.formatMessage({ id: "settings.title" });
+  const commandCenterLabel = intl.formatMessage({ id: "workspaceSidebar.commandCenter" });
   const usageButtonClick = onUsageClick ?? onSettingsButtonClick;
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const [desktopZoomLevel, setDesktopZoomLevel] = useState(0);
@@ -373,12 +374,12 @@ export const WorkspaceSidebarFooter = memo(function WorkspaceSidebarFooterCompon
           </DropdownMenuContent>
         </DropdownMenu>
         <div className="flex shrink-0 items-center gap-1.5">
-          <ControlHintTooltip title="Command Center">
+          <ControlHintTooltip title={commandCenterLabel}>
             <Button
               type="button"
               variant="ghost"
               size="icon-lg"
-              aria-label="Command Center"
+              aria-label={commandCenterLabel}
               disabled={!onOpenCommandCenter}
               onClick={onOpenCommandCenter}
             >

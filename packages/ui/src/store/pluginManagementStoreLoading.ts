@@ -148,6 +148,8 @@ async function runLoadInto(
       installedPlugins: overviewResult.installedPlugins,
       restorableBuiltins: overviewResult.restorableBuiltins,
       diagnostics,
+      // 成功加载即清除上一次失败：错误横幅只描述“当前最近一次状态”。
+      error: null,
       loading: false,
     });
   } catch (error) {
@@ -173,6 +175,8 @@ async function runLoadInto(
         installedPlugins: [],
         restorableBuiltins: [],
         diagnostics: result.diagnostics,
+        // list fallback 成功说明 RPC 通路正常，清掉上一次的失败横幅。
+        error: null,
         loading: false,
       });
       return;

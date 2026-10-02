@@ -344,7 +344,7 @@ export function CodingPlanUsageBarChart({
   const tooltipContent = useMemo(
     () => (
       <CodingPlanBarTooltipContent
-        className="max-w-96 min-w-72"
+        className="max-w-96 min-w-72 max-md:min-w-0 max-md:max-w-80"
         indicator="dot"
         labelFormatter={formatTooltipLabel}
         formatter={formatTooltipValue}

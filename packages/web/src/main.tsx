@@ -11,7 +11,7 @@ import {
   type Theme,
 } from "@zcode/ui";
 import "@zcode/ui/styles.css";
-import { connectViaWebSocket } from "@zcode/client";
+import { connectViaWebSocket, startConnectionHeartbeat } from "@zcode/client";
 import { WebCallbackPage } from "./auth/WebCallbackPage.js";
 import { createWebAuthService } from "./auth/webAuthService.js";
 import { WEB_ZAI_OAUTH_CONFIG, resolveWebAuthDevReturnTo } from "./auth/webZaiOAuthConfig.js";
@@ -205,6 +205,7 @@ async function renderConversationSharePage(): Promise<void> {
 
 function createWebPlatform(): IPlatformService {
   return {
+    platformKind: "web",
     canSelectFilePath: false,
     // Web 端无法打开系统目录选择框
     selectDirectory: () => Promise.resolve(null),
@@ -422,10 +423,18 @@ function WebServerAuthScreen({ onAuthenticated }: { onAuthenticated: () => void 
         body: JSON.stringify({ token: value }),
       });
       if (!response.ok) {
-        setError(response.status === 401 ? "Invalid server token." : "Authentication failed. Please try again.");
+        setError(
+          response.status === 401
+            ? "Invalid server token."
+            : "Authentication failed. Please try again.",
+        );
         return;
       }
-      window.history.replaceState({}, document.title, window.location.pathname + window.location.hash);
+      window.history.replaceState(
+        {},
+        document.title,
+        window.location.pathname + window.location.hash,
+      );
       onAuthenticated();
     } catch {
       setError("Unable to reach the server. Please check the connection and try again.");
@@ -451,7 +460,8 @@ function WebServerAuthScreen({ onAuthenticated }: { onAuthenticated: () => void 
         <section className="w-full rounded-xl border border-card-border bg-card p-6 shadow-sm">
           <h1 className="text-base font-semibold">Server Authentication</h1>
           <p className="mt-2 text-ui-xs/relaxed text-foreground-subtle">
-            Enter the server token to connect to this ZCode server. The token is stored only as a secure browser cookie.
+            Enter the server token to connect to this ZCode server. The token is stored only as a
+            secure browser cookie.
           </p>
           <label className="mt-5 block text-ui-xs font-medium" htmlFor="zcode-server-token">
             Server Token
@@ -533,6 +543,51 @@ function renderWebBootstrapError(error: unknown): void {
   );
 }
 
+function WebConnectionLostScreen() {
+  // Auto-reload gives a woken-up phone/laptop a seamless recovery; if the server is
+  // still gone the reload lands on the bootstrap error screen, which never
+  // auto-reloads, so this cannot loop.
+  useEffect(() => {
+    const timer = setTimeout(() => window.location.reload(), 5000);
+    return () => clearTimeout(timer);
+  }, []);
+  const isZh = /^zh\b/i.test(navigator.language);
+  const isTh = /^th\b/i.test(navigator.language);
+  const title = isZh || isTh ? "การเชื่อมต่อขาดหาย" : "Connection lost";
+  const message =
+    isZh || isTh
+      ? "การเชื่อมต่อไปยังเซิร์ฟเวอร์ ZCode ถูกขัดจังหวะ หน้านี้จะโหลดใหม่อัตโนมัติในอีกไม่กี่วินาที"
+      : "The connection to the ZCode server was interrupted. This page will reload in a few seconds.";
+  const action = isZh || isTh ? "โหลดใหม่ตอนนี้" : "Reload now";
+  return (
+    <div className="h-dvh min-h-dvh w-screen bg-background text-foreground">
+      <div className="mx-auto flex h-full w-full max-w-lg items-center px-4">
+        <section className="w-full rounded-xl border border-card-border bg-card p-5">
+          <div className="flex items-center gap-3">
+            <span className="size-2 rounded-full bg-destructive" />
+            <h1 className="text-ui-xs font-medium">{title}</h1>
+          </div>
+          <p className="mt-2 text-ui-xs/relaxed text-foreground-subtle">{message}</p>
+          <button
+            type="button"
+            className="mt-4 rounded-lg border border-border bg-surface px-3 py-2 text-ui-xs text-foreground-subtle hover:bg-surface-hover"
+            onClick={() => {
+              window.location.reload();
+            }}
+          >
+            {action}
+          </button>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function renderWebConnectionLostScreen(): void {
+  document.title = "ZCode - Connection lost";
+  root.render(<WebConnectionLostScreen />);
+}
+
 async function bootstrapWebApp() {
   const params = new URLSearchParams(window.location.search);
   if (isWebOAuthCallback(params)) {
@@ -565,9 +620,37 @@ async function bootstrapWebApp() {
     return;
   }
 
+  let connectionLostHandled = false;
+  let stopConnectionHeartbeat: (() => void) | undefined;
+  const handleConnectionLost = () => {
+    if (connectionLostHandled) {
+      return;
+    }
+    connectionLostHandled = true;
+    stopConnectionHeartbeat?.();
+    renderWebConnectionLostScreen();
+  };
+
   try {
     const services = await connectViaWebSocket(bootstrap.wsUrl, {
-      onClose: () => {},
+      onClose: handleConnectionLost,
+    });
+    // The RPC layer has no per-request timeout and a zombie transport (phone
+    // locked, laptop asleep, NAT idle drop) never fires a close event, so keep
+    // light traffic flowing and declare death after consecutive failed probes
+    // instead of letting every in-flight call hang silently.
+    stopConnectionHeartbeat = startConnectionHeartbeat({
+      ping: () => services.settingService.get(),
+      onConnectionDead: handleConnectionLost,
+      onWakeUp: (listener) => {
+        const handler = () => {
+          if (document.visibilityState === "visible") {
+            listener();
+          }
+        };
+        document.addEventListener("visibilitychange", handler);
+        return () => document.removeEventListener("visibilitychange", handler);
+      },
     });
     const platform = createWebPlatform();
     document.title = "ZCode - Web + Server";

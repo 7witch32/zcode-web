@@ -742,7 +742,7 @@ export function useGroupedTaskView(params: { workspaceTabs: WorkspaceTabState[] 
         // 内容没变时复用旧视图/旧节点引用，setState 同引用直接 bail，避免整列表无效重渲染。
         // 用 viewRef 读当前视图而不是在 updater 里做副作用：StrictMode 会重复调用 updater。
         const stabilizedView = stabilizeGroupedView(viewRef.current, nextView);
-        logger.info("[global-task-discovery] grouped renderer result", {
+        logger.debug("[global-task-discovery] grouped renderer result", {
           includeAllWorkspaces: true,
           workspaceScopeCount: scopes.length,
           taskIndexItemCount: taskIndexItems.length,

@@ -76,7 +76,7 @@ export function DataBaseDirControl({
   }, [defaultHomeDir, localDataBaseDir, onDataBaseDirChange]);
 
   return (
-    <div className="flex w-[320px] min-w-0 flex-col gap-2">
+    <div className="flex w-full max-w-[320px] min-w-0 flex-col gap-2">
       <div className="flex items-center gap-2">
         <FolderOpen className="size-4 shrink-0 text-foreground-subtle" />
         <Input

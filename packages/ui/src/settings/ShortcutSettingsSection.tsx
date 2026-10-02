@@ -28,6 +28,7 @@ import { ShortcutBindingRow, type RecordingState } from "./ShortcutBindingRow.js
 import { ShortcutSearchBar } from "./ShortcutSearchBar.js";
 import { useShortcutKeySearch } from "./useShortcutKeySearch.js";
 import { useShortcutRecording } from "./useShortcutRecording.js";
+import { useIsCoarsePointerDevice } from "@/hooks/useIsCoarsePointerDevice.js";
 
 /**
  * 快捷键设置分区：命令表只读展示 + 键盘录入 + 冲突处理。
@@ -38,7 +39,7 @@ import { useShortcutRecording } from "./useShortcutRecording.js";
  */
 export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boolean }) {
   const { intl } = useZCodeIntl();
-  const { settings, update } = useSettings();
+  const { settings, update, refresh } = useSettings();
   const platform = usePlatform();
   const [query, setQuery] = useState("");
   const [recording, setRecording] = useState<RecordingState | null>(null);
@@ -83,11 +84,15 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
         await update({ shortcutBindings: next });
       } catch (error) {
         logger.error("[shortcuts] 保存快捷键绑定失败", { error: String(error) });
+        // 失败必须可见并回带真实值：UI 可能已乐观显示新键位，refresh 从
+        // settingService 拉回服务端事实，避免用户以为改键成功。
+        toast(intl.formatMessage({ id: "settings.actionFailed" }));
+        void refresh();
       } finally {
         savingRef.current = false;
       }
     },
-    [update],
+    [update, refresh, intl],
   );
 
   /** 追加一条（占位行录第一条也走这里：生效列表为空时等价于写入第一条）。 */
@@ -210,9 +215,22 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
   });
 
   const recordingCommandId = recording?.commandId ?? null;
+  // Touch devices have no Esc/Backspace and no on-screen way to record: show the
+  // external-keyboard hint and a tappable cancel button while recording. The record
+  // buttons stay enabled — iOS Safari delivers real keydown events from a connected
+  // Bluetooth keyboard, so recording works there exactly like on the Mac.
+  const isCoarsePointer = useIsCoarsePointerDevice();
 
   return (
     <div className="space-y-4" data-testid="settings-shortcuts-section">
+      {isCoarsePointer ? (
+        <div
+          className="rounded-lg bg-surface px-4 py-2.5 text-ui-sm text-foreground-subtle"
+          data-testid="settings-shortcut-external-keyboard-hint"
+        >
+          {intl.formatMessage({ id: "settings.shortcuts.externalKeyboardHint" })}
+        </div>
+      ) : null}
       <ShortcutSearchBar
         query={query}
         onQueryChange={setQuery}
@@ -233,11 +251,19 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
       />
 
       <div className="overflow-hidden rounded-xl border border-border">
-        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_72px] bg-surface px-4 py-3 text-ui-sm text-foreground-subtle">
-          <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderCommand" })}</span>
-          <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderBinding" })}</span>
-          <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderScope" })}</span>
-          <span>{intl.formatMessage({ id: "settings.shortcuts.columnHeaderActions" })}</span>
+        <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_80px_72px] bg-surface px-4 py-3 text-ui-sm text-foreground-subtle max-md:grid-cols-[minmax(0,1fr)_auto]">
+          <span className="max-md:order-1">
+            {intl.formatMessage({ id: "settings.shortcuts.columnHeaderCommand" })}
+          </span>
+          <span className="max-md:order-2">
+            {intl.formatMessage({ id: "settings.shortcuts.columnHeaderBinding" })}
+          </span>
+          <span className="max-md:hidden">
+            {intl.formatMessage({ id: "settings.shortcuts.columnHeaderScope" })}
+          </span>
+          <span className="max-md:hidden">
+            {intl.formatMessage({ id: "settings.shortcuts.columnHeaderActions" })}
+          </span>
         </div>
         {visibleCommands.map((entry) => (
           <ShortcutBindingRow
@@ -249,6 +275,8 @@ export function ShortcutSettingsSection({ isDesktop = false }: { isDesktop?: boo
             isRecording={recordingCommandId === entry.id}
             recording={recording}
             menuChannelUnavailable={entry.channel === "menu" && !isDesktop}
+            showTouchCancel={isCoarsePointer}
+            onCancelRecording={() => setRecording(null)}
             onRecord={(bindingIndex) => {
               // 行内录制与按键搜索武装态互斥：两套 window capture 监听并存会互相吞键
               keySearch.disarm();

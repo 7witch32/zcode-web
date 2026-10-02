@@ -59,6 +59,19 @@ function wrapBrowserWebSocket(ws: WebSocket): ISocket {
   };
 }
 
+export function connectViaSocket(socket: ISocket): IServiceAccessor {
+  const client = new ChannelClient(new SocketProtocol(socket));
+  // SocketProtocol only listens to onData, so when the socket died the client stayed
+  // alive while write() silently dropped every frame — in-flight and later RPC
+  // promises never settled (e.g. a settings form stuck on "Saving..." forever with
+  // no error and no recovery). ChannelClient.dispose fails closed by rejecting all
+  // pending and future calls, and is idempotent, so wiring both close events is safe.
+  const failClosed = () => client.dispose(new Error("WebSocket connection closed"));
+  socket.onClose(failClosed);
+  socket.onEnd(failClosed);
+  return new RemoteServiceAccess(client);
+}
+
 export function connectViaWebSocket(
   wsUrl: string,
   options?: WebSocketConnectionOptions,
@@ -94,7 +107,7 @@ export function connectViaWebSocket(
       settled = true;
       options?.onOpenSocket?.(ws);
       const socket = wrapBrowserWebSocket(ws);
-      resolve(connectViaProtocol(new SocketProtocol(socket)));
+      resolve(connectViaSocket(socket));
     });
   });
 }
